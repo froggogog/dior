@@ -73,6 +73,7 @@
         coins: 0,
         owned_snake: false,
         owned_slope: false,
+        owned_buckshot: false,
         muted_until: null,
         mute_reason: null
       });
@@ -154,7 +155,7 @@
 
         const { data: profile, error } = await supabase
           .from("profiles")
-          .select("username,xp,level,coins,owned_snake,owned_slope,muted_until,mute_reason")
+          .select("username,xp,level,coins,owned_snake,owned_slope,owned_buckshot,muted_until,mute_reason")
           .eq("username", username)
           .single();
 
@@ -181,6 +182,7 @@
           <strong>💰 Coins:</strong> ${profile.coins}<br>
           <strong>🐍 Owns Snake:</strong> ${profile.owned_snake ? "Yes" : "No"}<br>
           <strong>📈 Owns Slope:</strong> ${profile.owned_slope ? "Yes" : "No"}<br>
+          <strong>🔫 Owns Buckshot Roulette:</strong> ${profile.owned_buckshot ? "Yes" : "No"}<br>
           <strong>🔇 Mute Status:</strong> ${muteStatus}
         `;
         container.appendChild(statsDiv);
@@ -304,6 +306,66 @@
         return overlay;
       }
 
+      function createBuckshotOverlay() {
+        let overlay = document.getElementById("buckshot-fullscreen-overlay");
+        if (overlay) return overlay;
+
+        overlay = document.createElement("div");
+        overlay.id = "buckshot-fullscreen-overlay";
+        overlay.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100vw;
+          height: 100vh;
+          background: rgba(0, 0, 0, 0.9);
+          z-index: 9999;
+          overflow: hidden;
+        `;
+
+        const closeBtn = document.createElement("button");
+        closeBtn.textContent = "❌";
+        closeBtn.style.cssText = `
+          position: absolute;
+          top: 8px;
+          right: 15px;
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          border: none;
+          cursor: pointer;
+          background: #7289da;
+          color: white;
+          font-size: 20px;
+          font-weight: bold;
+          z-index: 10000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        `;
+        closeBtn.onclick = () => {
+          document.body.removeChild(overlay);
+        };
+
+        const frame = document.createElement("iframe");
+        frame.src = "https://html5.gamedistribution.com/87c6432822364f3f8ac0dddfcb41611e/";
+        frame.style.cssText = `
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100vw;
+          height: 100vh;
+          border: none;
+          display: block;
+          allowfullscreen
+        `;
+
+        overlay.appendChild(closeBtn);
+        overlay.appendChild(frame);
+        document.body.appendChild(overlay);
+        return overlay;
+      }
+
       function openSnakeFullscreen() {
         createSnakeOverlay();
       }
@@ -312,13 +374,17 @@
         createSlopeOverlay();
       }
 
+      function openBuckshotFullscreen() {
+        createBuckshotOverlay();
+      }
+
       async function loadShop() {
         const container = document.getElementById("messages");
         container.innerHTML = "Loading shop...";
 
         const { data: profile } = await supabase
           .from("profiles")
-          .select("coins, owned_snake, owned_slope")
+          .select("coins, owned_snake, owned_slope, owned_buckshot")
           .eq("username", username)
           .single();
 
@@ -346,6 +412,7 @@
         // Slope Game Item
         const slopeDiv = document.createElement("div");
         slopeDiv.className = "message";
+        slopeDiv.style.marginBottom = "20px";
         if (profile?.owned_slope) {
           slopeDiv.innerHTML = `
             <strong>📈 Slope Game</strong><br>
@@ -361,7 +428,25 @@
         }
         container.appendChild(slopeDiv);
 
-        // Add event listeners
+        // Buckshot Roulette Item
+        const buckshotDiv = document.createElement("div");
+        buckshotDiv.className = "message";
+        if (profile?.owned_buckshot) {
+          buckshotDiv.innerHTML = `
+            <strong>🔫 Buckshot Roulette</strong><br>
+            High-stakes Russian roulette with bullets!<br>
+            <button id="playBuckshotBtn" class="shop-btn">Play Buckshot Roulette (Fullscreen)</button>
+          `;
+        } else {
+          buckshotDiv.innerHTML = `
+            <strong>🔫 Buckshot Roulette</strong><br>
+            High-stakes Russian roulette with bullets! Cost: 35 coins<br>
+            <button id="buyBuckshotBtn" class="shop-btn">Buy Buckshot Roulette (35 coins)</button>
+          `;
+        }
+        container.appendChild(buckshotDiv);
+
+        // Add event listeners for Snake
         if (profile?.owned_snake) {
           document.getElementById("playSnakeBtn").onclick = openSnakeFullscreen;
         } else {
@@ -386,7 +471,7 @@
             const { error } = await supabase
               .from("profiles")
               .update({
-                coins: p.coins - 15,
+                coins: p.coins - 25,
                 owned_snake: true
               })
               .eq("username", username);
@@ -402,6 +487,7 @@
           };
         }
 
+        // Add event listeners for Slope
         if (profile?.owned_slope) {
           document.getElementById("playSlopeBtn").onclick = openSlopeFullscreen;
         } else {
@@ -426,7 +512,7 @@
             const { error } = await supabase
               .from("profiles")
               .update({
-                coins: p.coins - 25,
+                coins: p.coins - 50,
                 owned_slope: true
               })
               .eq("username", username);
@@ -438,6 +524,47 @@
 
             alert("You bought Slope! Opening...");
             openSlopeFullscreen();
+            await loadShop();
+          };
+        }
+
+        // Add event listeners for Buckshot Roulette
+        if (profile?.owned_buckshot) {
+          document.getElementById("playBuckshotBtn").onclick = openBuckshotFullscreen;
+        } else {
+          document.getElementById("buyBuckshotBtn").onclick = async () => {
+            const { data: p } = await supabase
+              .from("profiles")
+              .select("coins, owned_buckshot")
+              .eq("username", username)
+              .single();
+            if (!p) return;
+
+            if (p.owned_buckshot) {
+              alert("You already own Buckshot Roulette!");
+              await loadShop();
+              return;
+            }
+            if (p.coins < 35) {
+              alert("You need 35 coins to buy Buckshot Roulette!");
+              return;
+            }
+
+            const { error } = await supabase
+              .from("profiles")
+              .update({
+                coins: p.coins - 35,
+                owned_buckshot: true
+              })
+              .eq("username", username);
+
+            if (error) {
+              alert("Purchase failed.");
+              return;
+            }
+
+            alert("You bought Buckshot Roulette! Opening...");
+            openBuckshotFullscreen();
             await loadShop();
           };
         }
@@ -504,6 +631,7 @@
       window.openProfileEditor = openProfileEditor;
       window.openSnakeFullscreen = openSnakeFullscreen;
       window.openSlopeFullscreen = openSlopeFullscreen;
+      window.openBuckshotFullscreen = openBuckshotFullscreen;
 
       const messageInput = document.getElementById("messageInput");
       messageInput.addEventListener("keypress", (e) => {
@@ -515,6 +643,3 @@
   </script>
 </body>
 </html>
-
-
-
