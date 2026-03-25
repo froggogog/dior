@@ -386,7 +386,7 @@
             const { error } = await supabase
               .from("profiles")
               .update({
-                coins: p.coins - 25,
+                coins: p.coins - 15,
                 owned_snake: true
               })
               .eq("username", username);
@@ -426,7 +426,7 @@
             const { error } = await supabase
               .from("profiles")
               .update({
-                coins: p.coins - 50,
+                coins: p.coins - 25,
                 owned_slope: true
               })
               .eq("username", username);
@@ -515,3 +515,6 @@
   </script>
 </body>
 </html>
+
+
+
