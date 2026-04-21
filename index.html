@@ -78,7 +78,7 @@
     const $ = id => document.getElementById(id);
     let currentChannel = 'general';
     let username = localStorage.getItem('username') || '';
-
+    let loadToken = 0;
     const avatarCache = new Map();
 
     if (!username) {
@@ -175,7 +175,7 @@
       $('messageInput').placeholder = (channel === 'stats' || channel === 'shop') ? '' : `Message #${channel}`;
     }
 
-    async function loadMessages(channel){
+    async function loadMessages(channel, token = ++loadToken){
       const messagesEl = $('messages');
       messagesEl.innerHTML = '';
 
@@ -186,6 +186,8 @@
         .order('created_at', { ascending: true })
         .limit(50);
 
+      if (token !== loadToken || channel !== currentChannel) return;
+
       if (!msgs || !msgs.length) {
         messagesEl.innerHTML = '';
         await addMessage('System', 'No messages yet.');
@@ -193,6 +195,8 @@
       }
 
       const avatars = await getAvatars(msgs.map(m => m.username));
+
+      if (token !== loadToken || channel !== currentChannel) return;
 
       messagesEl.innerHTML = msgs.map(m => {
         const safe = String(m.text).replace(/\n/g, '<br>');
@@ -249,14 +253,16 @@
       $('messages').scrollTop = $('messages').scrollHeight;
     }
 
-    async function loadStats(){
+    async function loadStats(token = loadToken){
       const p = await loadProfile(username);
+      if (token !== loadToken || currentChannel !== 'stats') return;
       $('messages').innerHTML='';
       await addMessage('System', `${p.username}<br><strong>Level:</strong> ${p.level}<br><strong>XP:</strong> ${p.xp}<br><strong>XP to next level:</strong> ${Math.max((p.level||1)*100-(p.xp||0),0)}<br><strong>Coins:</strong> ${p.coins}<br><strong>Owns Snake:</strong> ${p.owned_snake ? 'Yes' : 'No'}<br><strong>Owns Slope:</strong> ${p.owned_slope ? 'Yes' : 'No'}`, await avatarFor(p.username));
     }
 
-    async function loadShop(){
+    async function loadShop(token = loadToken){
       const p = await loadProfile(username);
+      if (token !== loadToken || currentChannel !== 'shop') return;
       $('messages').innerHTML='';
       const mk=(title,owned,buyText,playId,buyId,cost)=>{
         const div=document.createElement('div');
@@ -389,7 +395,16 @@
 
     function openSnakeFullscreen(){ openOverlay(`<iframe src="https://frogdafish.github.io/Snek"></iframe>`); }
     function openSlopeFullscreen(){ openOverlay(`<iframe src="slope.html"></iframe>`); }
-    function switchChannel(channel){ currentChannel=channel; renderChannelHeader(channel); $('messages').innerHTML=''; if(channel==='stats') loadStats(); else if(channel==='shop') loadShop(); else loadMessages(channel); }
+
+    function switchChannel(channel){
+      currentChannel = channel;
+      renderChannelHeader(channel);
+      $('messages').innerHTML = '';
+      const token = ++loadToken;
+      if(channel === 'stats') loadStats(token);
+      else if(channel === 'shop') loadShop(token);
+      else loadMessages(channel, token);
+    }
 
     $('sendBtn').addEventListener('click', sendMessage);
     $('messageInput').addEventListener('keydown', e=>{ if(e.key==='Enter') sendMessage(); });
