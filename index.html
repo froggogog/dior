@@ -92,6 +92,7 @@
         profile_picture: null,
         muted_until: null,
         mute_reason: null,
+        muted: false,
         owned_snake: false,
         owned_slope: false,
         pfp_brush_color: 'rgb(255,255,255)',
@@ -121,6 +122,7 @@
         profile_picture: null,
         muted_until: null,
         mute_reason: null,
+        muted: false,
         owned_snake: false,
         owned_slope: false,
         pfp_brush_color: 'rgb(255,255,255)',
@@ -223,7 +225,7 @@
       if(!text) return;
       if(currentChannel==='stats' || currentChannel==='shop') return alert('You cannot send messages in this channel!');
       const profile = await loadProfile(username);
-      if(profile?.muted_until) return alert(`You are muted!\n\nReason: ${profile.mute_reason || 'No reason specified'}`);
+      if(profile?.muted_until || profile?.muted === true) return alert(`You are muted!\n\nReason: ${profile.mute_reason || 'No reason specified'}`);
 
       const message = {
         channel: currentChannel,
