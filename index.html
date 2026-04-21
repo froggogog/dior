@@ -79,6 +79,8 @@
     let currentChannel = 'general';
     let username = localStorage.getItem('username') || '';
 
+    const avatarCache = new Map();
+
     if (!username) {
       while (!username) username = prompt('Enter username:');
       localStorage.setItem('username', username);
@@ -127,9 +129,34 @@
       });
     }
 
+    async function getAvatars(usernames) {
+      const unique = [...new Set(usernames.filter(Boolean))];
+      const missing = unique.filter(name => !avatarCache.has(name));
+
+      if (missing.length) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('username, profile_picture')
+          .in('username', missing);
+
+        const rows = data || [];
+        for (const name of missing) {
+          const profile = rows.find(p => p.username === name);
+          avatarCache.set(name, profile?.profile_picture || getFallbackAvatar(name));
+        }
+      }
+
+      const out = {};
+      for (const name of unique) out[name] = avatarCache.get(name) || getFallbackAvatar(name);
+      return out;
+    }
+
     async function avatarFor(name){
+      if (avatarCache.has(name)) return avatarCache.get(name);
       const profile = await loadProfile(name);
-      return profile?.profile_picture || getFallbackAvatar(name);
+      const avatar = profile?.profile_picture || getFallbackAvatar(name);
+      avatarCache.set(name, avatar);
+      return avatar;
     }
 
     async function addMessage(user, text, avatarUrl=null){
@@ -149,38 +176,42 @@
     }
 
     async function loadMessages(channel){
-      $('messages').innerHTML = '';
+      const messagesEl = $('messages');
+      messagesEl.innerHTML = '';
 
       const { data: msgs } = await supabase
         .from('messages')
-        .select('*')
+        .select('channel,username,text,created_at')
         .eq('channel', channel)
-        .order('created_at');
+        .order('created_at', { ascending: true })
+        .limit(50);
 
       if (!msgs || !msgs.length) {
+        messagesEl.innerHTML = '';
         await addMessage('System', 'No messages yet.');
         return;
       }
 
-      const html = await Promise.all(msgs.map(async (m) => {
-        const avatar = await avatarFor(m.username);
+      const avatars = await getAvatars(msgs.map(m => m.username));
+
+      messagesEl.innerHTML = msgs.map(m => {
         const safe = String(m.text).replace(/\n/g, '<br>');
         return `
       <div class="message">
         <div class="message-row">
-          <img class="avatar" src="${avatar}" alt="avatar">
+          <img class="avatar" src="${avatars[m.username]}" alt="avatar">
           <div class="message-content">
             <span class="username">${m.username}</span> ${safe}
           </div>
         </div>
       </div>`;
-      }));
+      }).join('');
 
-      $('messages').innerHTML = html.join('');
-      $('messages').querySelectorAll('.avatar').forEach((img, i) => {
-        const name = msgs[i].username;
-        setAvatarFallback(img, name);
+      messagesEl.querySelectorAll('.avatar').forEach((img, i) => {
+        setAvatarFallback(img, msgs[i].username);
       });
+
+      messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
     async function sendMessage(){
@@ -189,14 +220,33 @@
       if(currentChannel==='stats' || currentChannel==='shop') return alert('You cannot send messages in this channel!');
       const profile = await loadProfile(username);
       if(profile?.muted_until) return alert(`You are muted!\n\nReason: ${profile.mute_reason || 'No reason specified'}`);
-      await supabase.from('messages').insert({
+
+      const message = {
         channel: currentChannel,
         username,
         text,
         created_at: new Date().toISOString()
-      });
+      };
+
+      const { error } = await supabase.from('messages').insert(message);
+      if (error) return alert('Message failed to send.');
+
       $('messageInput').value='';
-      await loadMessages(currentChannel);
+
+      const avatar = await avatarFor(username);
+      const safe = String(text).replace(/\n/g, '<br>');
+      const div = document.createElement('div');
+      div.className = 'message';
+      div.innerHTML = `
+        <div class="message-row">
+          <img class="avatar" src="${avatar}" alt="avatar">
+          <div class="message-content">
+            <span class="username">${username}</span> ${safe}
+          </div>
+        </div>`;
+      setAvatarFallback(div.querySelector('.avatar'), username);
+      $('messages').appendChild(div);
+      $('messages').scrollTop = $('messages').scrollHeight;
     }
 
     async function loadStats(){
