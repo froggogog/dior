@@ -28,22 +28,10 @@
     button{padding:10px 16px;border-radius:4px;border:none;background:#7289da;color:#fff}
     .typing-indicator{font-size:12px;color:#b9bbbe;margin:0 0 8px 15px;font-style:italic}
     .shop-btn{background:#43b581;margin:5px 0;padding:8px 16px}
-    .profile-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:10000}
-    .profile-modal{width:360px;max-width:calc(100vw - 30px);background:#2f3136;border:1px solid #202225;border-radius:12px;padding:18px}
-    .profile-field{margin-bottom:12px}
-    .profile-field label{display:block;margin-bottom:6px;color:#ddd;font-size:14px}
-    .profile-field input[type=text], .profile-field input[type=number], .profile-field input[type=color]{width:100%;box-sizing:border-box;padding:10px;border-radius:6px;border:none;background:#40444b;color:#fff;outline:none}
-    .rgb-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    .rgb-row input[type="number"]{flex:1;max-width:120px}
-    .rgb-row button{flex:0 0 auto}
-    .profile-actions{display:flex;gap:10px;margin-top:14px}
-    .profile-actions button{flex:1}
-    .cancel-btn{background:#555}
     .overlay{position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:9999;display:flex;align-items:center;justify-content:center}
     .overlay-box{width:min(980px,96vw);height:min(680px,92vh);background:#1e1f22;border-radius:12px;position:relative;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.35)}
     .overlay-box iframe{position:absolute;inset:0;width:100%;height:100%;border:none}
     .close-btn{position:absolute;top:10px;right:10px;z-index:10001;width:40px;height:40px;border-radius:50%;border:none;background:#7289da;color:#fff;font-size:20px}
-    canvas{touch-action:none;cursor:crosshair}
     .admin-list{padding:18px;color:#fff;overflow:auto;height:100%;box-sizing:border-box}
     .admin-user{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px;margin-bottom:10px;background:#2f3136;border:1px solid #202225;border-radius:8px}
     .admin-user-info{display:flex;flex-direction:column;gap:4px}
@@ -52,17 +40,15 @@
     .admin-user-actions{display:flex;gap:8px;flex-wrap:wrap}
     .admin-mute-btn{background:#ff6b6b}
     .admin-unmute-btn{background:#43b581}
-    .mute-status { color: #ff6b6b; font-weight: bold; }
   </style>
 </head>
 <body>
-
   <div class="sidebar">
     <h3>TEXT CHANNELS</h3>
     <div class="channel" data-channel="general"># general</div>
     <div class="channel" data-channel="gaming"># gaming</div>
     <div class="channel" data-channel="coding"># coding</div>
-    <div class="channel" data-channel="adaminchat"># ad da min chat</div>
+    <div class="channel" data-channel="adaminchat" id="adminChatChannel" style="display:none;"># ad da min chat</div>
     <div class="channel" data-channel="stats"># stats</div>
     <div class="channel" data-channel="shop"># shop</div>
     <div class="admin-panel" id="adminPanelBtn"> Admin Panel</div>
@@ -131,10 +117,18 @@
       await supabase.from('profiles').upsert({ username, ...defaultProfile });
     }
 
+    async function refreshAdminVisibility() {
+      const profile = await loadProfile(username);
+      const btn = $('adminChatChannel');
+      if (!btn) return;
+      btn.style.display = profile?.is_admin === true ? 'block' : 'none';
+    }
+
     async function refreshAdminButton() {
       const profile = await loadProfile(username);
       const btn = $('adminPanelBtn');
-      if (btn) btn.style.display = profile?.is_admin ? 'block' : 'none';
+      if (!btn) return;
+      btn.style.display = profile?.is_admin === true ? 'block' : 'none';
     }
 
     async function getAvatars(usernames) {
@@ -395,6 +389,7 @@
           }
           o.remove();
           await refreshAdminButton();
+          await refreshAdminVisibility();
           if (currentChannel === 'stats') await loadStats(); else if (currentChannel === 'shop') await loadShop(); else await loadMessages(currentChannel);
           alert('Profile updated!');
         };
@@ -469,6 +464,7 @@
       const token = ++loadToken;
       if(channel === 'stats') loadStats(token);
       else if(channel === 'shop') loadShop(token);
+      else if(channel === 'adaminchat') loadMessages(channel, token);
       else loadMessages(channel, token);
     }
 
@@ -481,6 +477,7 @@
     renderChannelHeader('general');
     await ensureProfile();
     await refreshAdminButton();
+    await refreshAdminVisibility();
     await loadMessages('general');
   </script>
 </body>
