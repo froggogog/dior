@@ -8,11 +8,13 @@
     body{margin:0;font-family:Segoe UI,sans-serif;background:#36393f;color:#fff;display:flex;height:100vh;overflow:hidden}
     .sidebar{width:240px;background:#2f3136;padding:15px;display:flex;flex-direction:column;box-sizing:border-box}
     .sidebar h3{color:#8e9297;font-size:12px;margin:0 0 10px;text-transform:uppercase}
-    .channel,.edit-profile,button{cursor:pointer}
+    .channel,.edit-profile,.admin-panel,button{cursor:pointer}
     .channel{padding:6px 10px;border-radius:4px;color:#b9bbbe;transition:.15s;user-select:none}
     .channel:hover{background:#40444b;color:#fff}
-    .edit-profile{margin-top:auto;background:#40444b;text-align:center;padding:8px;border-radius:4px;user-select:none}
+    .edit-profile{margin-top:8px;background:#40444b;text-align:center;padding:8px;border-radius:4px;user-select:none}
     .edit-profile:hover{background:#5865f2}
+    .admin-panel{margin-top:auto;margin-bottom:8px;background:#5865f2;text-align:center;padding:8px;border-radius:4px;user-select:none;display:none}
+    .admin-panel:hover{background:#4752c4}
     .chat{flex:1;display:flex;flex-direction:column;min-width:0}
     .header{padding:15px;background:#2f3136;font-weight:bold;border-bottom:1px solid #202225}
     .messages{flex:1;padding:20px;overflow-y:auto;box-sizing:border-box}
@@ -42,6 +44,14 @@
     .overlay-box iframe{position:absolute;inset:0;width:100%;height:100%;border:none}
     .close-btn{position:absolute;top:10px;right:10px;z-index:10001;width:40px;height:40px;border-radius:50%;border:none;background:#7289da;color:#fff;font-size:20px}
     canvas{touch-action:none;cursor:crosshair}
+    .admin-list{padding:18px;color:#fff;overflow:auto;height:100%;box-sizing:border-box}
+    .admin-user{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px;margin-bottom:10px;background:#2f3136;border:1px solid #202225;border-radius:8px}
+    .admin-user-info{display:flex;flex-direction:column;gap:4px}
+    .admin-user-name{font-weight:bold;color:#fff}
+    .admin-user-stats{font-size:13px;color:#b9bbbe}
+    .admin-user-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .admin-mute-btn{background:#ff6b6b}
+    .admin-unmute-btn{background:#43b581}
     .mute-status { color: #ff6b6b; font-weight: bold; }
   </style>
 </head>
@@ -54,6 +64,7 @@
     <div class="channel" data-channel="coding"># coding</div>
     <div class="channel" data-channel="stats"># stats</div>
     <div class="channel" data-channel="shop"># shop</div>
+    <div class="admin-panel" id="adminPanelBtn"> Admin Panel</div>
     <div class="edit-profile" id="editProfileBtn"> Edit Profile</div>
   </div>
 
@@ -81,24 +92,26 @@
     let loadToken = 0;
     const avatarCache = new Map();
 
+    const defaultProfile = {
+      xp: 0,
+      level: 1,
+      coins: 0,
+      profile_picture: null,
+      muted_until: null,
+      mute_reason: null,
+      muted: false,
+      owned_snake: false,
+      owned_slope: false,
+      is_admin: false,
+      pfp_brush_color: 'rgb(255,255,255)',
+      pfp_brush_width: 10,
+      pfp_bg_color: '#40444b'
+    };
+
     if (!username) {
       while (!username) username = prompt('Enter username:');
       localStorage.setItem('username', username);
-      await supabase.from('profiles').upsert({
-        username,
-        xp: 0,
-        level: 1,
-        coins: 0,
-        profile_picture: null,
-        muted_until: null,
-        mute_reason: null,
-        muted: false,
-        owned_snake: false,
-        owned_slope: false,
-        pfp_brush_color: 'rgb(255,255,255)',
-        pfp_brush_width: 10,
-        pfp_bg_color: '#40444b'
-      });
+      await supabase.from('profiles').upsert({ username, ...defaultProfile });
     }
 
     const getFallbackAvatar = n => `https://ui-avatars.com/api/?name=${encodeURIComponent(n)}&background=7289da&color=fff&rounded=true&size=64`;
@@ -114,21 +127,13 @@
     }
 
     async function ensureProfile(){
-      await supabase.from('profiles').upsert({
-        username,
-        xp: 0,
-        level: 1,
-        coins: 0,
-        profile_picture: null,
-        muted_until: null,
-        mute_reason: null,
-        muted: false,
-        owned_snake: false,
-        owned_slope: false,
-        pfp_brush_color: 'rgb(255,255,255)',
-        pfp_brush_width: 10,
-        pfp_bg_color: '#40444b'
-      });
+      await supabase.from('profiles').upsert({ username, ...defaultProfile });
+    }
+
+    async function refreshAdminButton() {
+      const profile = await loadProfile(username);
+      const btn = $('adminPanelBtn');
+      if (btn) btn.style.display = profile?.is_admin ? 'block' : 'none';
     }
 
     async function getAvatars(usernames) {
@@ -259,7 +264,7 @@
       const p = await loadProfile(username);
       if (token !== loadToken || currentChannel !== 'stats') return;
       $('messages').innerHTML='';
-      await addMessage('System', `${p.username}<br><strong>Level:</strong> ${p.level}<br><strong>XP:</strong> ${p.xp}<br><strong>XP to next level:</strong> ${Math.max((p.level||1)*100-(p.xp||0),0)}<br><strong>Coins:</strong> ${p.coins}<br><strong>Owns Snake:</strong> ${p.owned_snake ? 'Yes' : 'No'}<br><strong>Owns Slope:</strong> ${p.owned_slope ? 'Yes' : 'No'}`, await avatarFor(p.username));
+      await addMessage('System', `${p.username}<br><strong>Level:</strong> ${p.level}<br><strong>XP:</strong> ${p.xp}<br><strong>XP to next level:</strong> ${Math.max((p.level||1)*100-(p.xp||0),0)}<br><strong>Coins:</strong> ${p.coins}<br><strong>Owns Snake:</strong> ${p.owned_snake ? 'Yes' : 'No'}<br><strong>Owns Slope:</strong> ${p.owned_slope ? 'Yes' : 'No'}<br><strong>Admin:</strong> ${p.is_admin ? 'Yes' : 'No'}`, await avatarFor(p.username));
     }
 
     async function loadShop(token = loadToken){
@@ -379,7 +384,6 @@
           const s2 = await loadProfile(username);
           const updated = { ...s2, username: newName, profile_picture: dataURL, pfp_bg_color: bgPicker.value, pfp_brush_color: brushColor, pfp_brush_width: lineWidth };
           if (newName !== username) {
-            const { data: allMsgs } = await supabase.from('messages').select('*').eq('username', username);
             await supabase.from('profiles').delete().eq('username', username);
             await supabase.from('profiles').upsert(updated);
             await supabase.from('messages').update({ username: newName }).eq('username', username);
@@ -389,7 +393,8 @@
             await saveProfile(updated);
           }
           o.remove();
-          if (currentChannel === 'stats') await loadStats(); else await loadMessages(currentChannel);
+          await refreshAdminButton();
+          if (currentChannel === 'stats') await loadStats(); else if (currentChannel === 'shop') await loadShop(); else await loadMessages(currentChannel);
           alert('Profile updated!');
         };
       });
@@ -397,6 +402,64 @@
 
     function openSnakeFullscreen(){ openOverlay(`<iframe src="https://frogdafish.github.io/Snek"></iframe>`); }
     function openSlopeFullscreen(){ openOverlay(`<iframe src="slope.html"></iframe>`); }
+
+    async function openAdminPanel(){
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('username, level, xp, coins, muted, muted_until, mute_reason, is_admin')
+        .order('username', { ascending: true });
+
+      const listHtml = (profiles || []).map(p => {
+        const muted = p.muted || p.muted_until;
+        return `
+          <div class="admin-user">
+            <div class="admin-user-info">
+              <div class="admin-user-name">${p.username}${p.is_admin ? ' (admin)' : ''}</div>
+              <div class="admin-user-stats">Level: ${p.level || 1} | XP: ${p.xp || 0} | Coins: ${p.coins || 0} | Status: ${muted ? 'Muted' : 'Active'}</div>
+              <div class="admin-user-stats">Reason: ${p.mute_reason || 'None'}</div>
+            </div>
+            <div class="admin-user-actions">
+              ${muted
+                ? `<button class="admin-unmute-btn" data-action="unmute" data-user="${p.username}">Unmute</button>`
+                : `<button class="admin-mute-btn" data-action="mute" data-user="${p.username}">Mute</button>`
+              }
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      const o = openOverlay(`
+        <div class="admin-list">
+          <h3 style="margin-top:0">User Management</h3>
+          <div id="adminUserList">${listHtml || '<div>No users found.</div>'}</div>
+        </div>
+      `);
+
+      o.querySelectorAll('[data-action]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const targetUser = btn.dataset.user;
+          const action = btn.dataset.action;
+          const reason = action === 'mute' ? prompt('Mute reason?') || 'No reason specified' : null;
+
+          if (action === 'mute') {
+            await supabase.from('profiles').update({
+              muted: true,
+              muted_until: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+              mute_reason: reason
+            }).eq('username', targetUser);
+          } else {
+            await supabase.from('profiles').update({
+              muted: false,
+              muted_until: null,
+              mute_reason: null
+            }).eq('username', targetUser);
+          }
+
+          o.remove();
+          openAdminPanel();
+        });
+      });
+    }
 
     function switchChannel(channel){
       currentChannel = channel;
@@ -411,10 +474,12 @@
     $('sendBtn').addEventListener('click', sendMessage);
     $('messageInput').addEventListener('keydown', e=>{ if(e.key==='Enter') sendMessage(); });
     $('editProfileBtn').addEventListener('click', openProfileEditor);
+    $('adminPanelBtn').addEventListener('click', openAdminPanel);
     document.querySelectorAll('.channel').forEach(el=>el.addEventListener('click', ()=>switchChannel(el.dataset.channel)));
 
     renderChannelHeader('general');
     await ensureProfile();
+    await refreshAdminButton();
     await loadMessages('general');
   </script>
 </body>
