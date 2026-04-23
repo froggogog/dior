@@ -165,7 +165,7 @@
     async function addMessage(user, text, avatarUrl=null){
       const div=document.createElement('div');
       div.className='message';
-      const safe = String(text).replace(/\n/g,'<br>');
+      const safe = String(text).replace(/\\\\\\\\n/g,'<br>');
       div.innerHTML=`<div class="message-row"><img class="avatar" src="${avatarUrl||await avatarFor(user)}" alt="avatar"><div class="message-content"><span class="username">${user}</span> ${safe}</div></div>`;
       const img = div.querySelector('.avatar');
       setAvatarFallback(img, user);
@@ -202,7 +202,7 @@
       if (token !== loadToken || channel !== currentChannel) return;
 
       messagesEl.innerHTML = msgs.map(m => {
-        const safe = String(m.text).replace(/\n/g, '<br>');
+        const safe = String(m.text).replace(/\\\\\\\\n/g, '<br>');
         return `
       <div class="message">
         <div class="message-row">
@@ -226,7 +226,11 @@
       if(!text) return;
       if(currentChannel==='stats' || currentChannel==='shop') return alert('You cannot send messages in this channel!');
       const profile = await loadProfile(username);
-      if(profile?.muted_until || profile?.muted === true) return alert(`You are muted!\n\nReason: ${profile.mute_reason || 'No reason specified'}`);
+      
+      // Allow admins to bypass mute
+      if (!profile?.is_admin && (profile?.muted_until || profile?.muted === true)) {
+        return alert(`You are muted!\\n\\nReason: ${profile.mute_reason || 'No reason specified'}`);
+      }
 
       const message = {
         channel: currentChannel,
@@ -241,7 +245,7 @@
       $('messageInput').value='';
 
       const avatar = await avatarFor(username);
-      const safe = String(text).replace(/\n/g, '<br>');
+      const safe = String(text).replace(/\\\\\\\\n/g, '<br>');
       const div = document.createElement('div');
       div.className = 'message';
       div.innerHTML = `
@@ -295,7 +299,7 @@
 
     function parseRGB(colorStr) {
       if (!colorStr || !colorStr.includes('rgb')) return {r:255, g:255, b:255};
-      const match = colorStr.match(/rgb\((\d+),(\d+),(\d+)\)/);
+      const match = colorStr.match(/rgb\\\\\((\\\\d+),(\\\\d+),(\\\\d+)\\\\\)/);
       return { r: parseInt(match?.[1] || '255'), g: parseInt(match?.[2] || '255'), b: parseInt(match?.[3] || '255') };
     }
 
