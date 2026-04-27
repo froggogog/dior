@@ -106,6 +106,7 @@
       owned_snake: false,
       owned_slope: false,
       owned_bartblast: false,
+      owned_sls: true,
       is_admin: false,
       pfp_brush_color: 'rgb(255,255,255)',
       pfp_brush_width: 10,
@@ -411,7 +412,7 @@
       const p = await loadProfile(username);
       if (token !== loadToken || currentChannel !== 'stats') return;
       $('messages').innerHTML='';
-      await addMessage('System', `${p.username}<br><strong>Level:</strong> ${p.level}<br><strong>XP:</strong> ${p.xp}<br><strong>XP to next level:</strong> ${Math.max((p.level||1)*100-(p.xp||0),0)}<br><strong>Coins:</strong> ${p.coins}<br><strong>Owns Snake:</strong> ${p.owned_snake ? 'Yes' : 'No'}<br><strong>Owns Slope:</strong> ${p.owned_slope ? 'Yes' : 'No'}<br><strong>Owns Bart Blast:</strong> ${p.owned_bartblast ? 'Yes' : 'No'}<br><strong>Admin:</strong> ${p.is_admin ? 'Yes' : 'No'}`, await avatarFor(p.username));
+      await addMessage('System', `${p.username}<br><strong>Level:</strong> ${p.level}<br><strong>XP:</strong> ${p.xp}<br><strong>XP to next level:</strong> ${Math.max((p.level||1)*100-(p.xp||0),0)}<br><strong>Coins:</strong> ${p.coins}<br><strong>Owns Snake:</strong> ${p.owned_snake ? 'Yes' : 'No'}<br><strong>Owns Slope:</strong> ${p.owned_slope ? 'Yes' : 'No'}<br><strong>Owns Bart Blast:</strong> ${p.owned_bartblast ? 'Yes' : 'No'}<br><strong>Owns Super Liquid Soccer:</strong> ${p.owned_sls ? 'Yes' : 'No'}<br><strong>Admin:</strong> ${p.is_admin ? 'Yes' : 'No'}`, await avatarFor(p.username));
     }
 
     async function loadShop(token = loadToken){
@@ -429,10 +430,12 @@
       mk('Snake Game', p.owned_snake, 'Buy Snake (25 coins)', 'playSnakeBtn', 'buySnakeBtn', 25);
       mk('Slope Game', p.owned_slope, 'Buy Slope (50 coins)', 'playSlopeBtn', 'buySlopeBtn', 50);
       mk('Bart Blast', p.owned_bartblast, 'Buy Bart Blast (75 coins)', 'playBartBtn', 'buyBartBtn', 75);
+      mk('Super Liquid Soccer', true, 'Play Super Liquid Soccer (Free)', 'playSlsBtn', 'buySlsBtn', 0);
 
       if(p.owned_snake) $('playSnakeBtn').onclick = openSnakeFullscreen; else $('buySnakeBtn').onclick = async ()=>{ const p2=await loadProfile(username); if((p2.coins||0)<25) return alert('You need 25 coins to buy Snake!'); p2.coins-=25; p2.owned_snake=true; await saveProfile(p2); alert('You bought Snake!'); await loadShop(); openSnakeFullscreen(); };
       if(p.owned_slope) $('playSlopeBtn').onclick = openSlopeFullscreen; else $('buySlopeBtn').onclick = async ()=>{ const p2=await loadProfile(username); if((p2.coins||0)<50) return alert('You need 50 coins to buy Slope!'); p2.coins-=50; p2.owned_slope=true; await saveProfile(p2); alert('You bought Slope!'); await loadShop(); openSlopeFullscreen(); };
       if(p.owned_bartblast) $('playBartBtn').onclick = openBartFullscreen; else $('buyBartBtn').onclick = async ()=>{ const p2=await loadProfile(username); if((p2.coins||0)<75) return alert('You need 75 coins to buy Bart Blast!'); p2.coins-=75; p2.owned_bartblast=true; await saveProfile(p2); alert('You bought Bart Blast!'); await loadShop(); openBartFullscreen(); };
+      $('playSlsBtn').onclick = openSuperLiquidSoccerFullscreen;
     }
 
     function openOverlay(innerHTML){
@@ -554,6 +557,7 @@
     function openSnakeFullscreen(){ openOverlay(`<iframe src="https://frogdafish.github.io/Snek"></iframe>`); }
     function openSlopeFullscreen(){ openOverlay(`<iframe src="slope.html"></iframe>`); }
     function openBartFullscreen(){ openOverlay(`<iframe src="bartblast.html"></iframe>`); }
+    function openSuperLiquidSoccerFullscreen(){ openOverlay(`<iframe src="https://blueskywrld.github.io/game3/"></iframe>`); }
 
     async function openAdminPanel(){
       const { data: profiles } = await supabase
