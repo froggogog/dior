@@ -40,6 +40,19 @@
     .admin-user-actions{display:flex;gap:8px;flex-wrap:wrap}
     .admin-mute-btn{background:#ff6b6b}
     .admin-unmute-btn{background:#43b581}
+    .thread-card{padding:12px;background:#2f3136;border:1px solid #202225;border-radius:8px;cursor:pointer;margin-bottom:10px}
+    .thread-card:hover{background:#35393f}
+    .thread-title{font-weight:bold;color:#fff}
+    .thread-desc{font-size:13px;color:#b9bbbe;margin-top:4px}
+    .thread-meta{font-size:12px;color:#8e9297;margin-top:6px}
+    .thread-topbar{display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+    .thread-create-btn{background:#43b581}
+    .thread-back-btn{background:#5865f2}
+    .thread-delete-btn{background:#ff6b6b}
+    .modal-field{margin:10px 0}
+    .modal-field label{display:block;font-size:12px;color:#b9bbbe;margin-bottom:6px}
+    .modal-field input,.modal-field textarea{width:100%;box-sizing:border-box}
+    .modal-field textarea{padding:10px;border-radius:4px;border:none;background:#303339;color:#fff;outline:none;resize:vertical;height:120px}
   </style>
 </head>
 <body>
@@ -48,6 +61,7 @@
     <div class="channel" data-channel="general"># general</div>
     <div class="channel" data-channel="gaming"># gaming</div>
     <div class="channel" data-channel="coding"># coding</div>
+    <div class="channel" data-channel="suggestions"># suggestions</div>
     <div class="channel" data-channel="adaminchat" id="adminChatChannel" style="display:none;"># ad da min chat</div>
     <div class="channel" data-channel="stats"># stats</div>
     <div class="channel" data-channel="shop"># shop</div>
@@ -75,6 +89,8 @@
 
     const $ = id => document.getElementById(id);
     let currentChannel = 'general';
+    let currentThreadId = null;
+    let currentThread = null;
     let username = localStorage.getItem('username') || '';
     let loadToken = 0;
     const avatarCache = new Map();
@@ -165,7 +181,7 @@
     async function addMessage(user, text, avatarUrl=null){
       const div=document.createElement('div');
       div.className='message';
-      const safe = String(text).replace(/\\\\\\\\n/g,'<br>');
+      const safe = String(text).replace(/\n/g,'<br>');
       div.innerHTML=`<div class="message-row"><img class="avatar" src="${avatarUrl||await avatarFor(user)}" alt="avatar"><div class="message-content"><span class="username">${user}</span> ${safe}</div></div>`;
       const img = div.querySelector('.avatar');
       setAvatarFallback(img, user);
@@ -174,8 +190,10 @@
     }
 
     function renderChannelHeader(channel){
-      $('channelName').textContent = channel === 'stats' ? '# stats' : channel === 'shop' ? '# shop' : channel === 'adaminchat' ? '# ad da min chat' : `# ${channel}`;
+      $('channelName').textContent = channel === 'stats' ? '# stats' : channel === 'shop' ? '# shop' : channel === 'suggestions' ? '# suggestions' : channel === 'adaminchat' ? '# ad da min chat' : `# ${channel}`;
       $('messageInput').placeholder = (channel === 'stats' || channel === 'shop') ? '' : `Message #${channel}`;
+      $('messageInput').disabled = false;
+      $('sendBtn').style.display = 'inline-block';
     }
 
     async function loadMessages(channel, token = ++loadToken){
@@ -186,6 +204,7 @@
         .from('messages')
         .select('channel,username,text,created_at')
         .eq('channel', channel)
+        .is('thread_id', null)
         .order('created_at', { ascending: true })
         .limit(50);
 
@@ -198,11 +217,10 @@
       }
 
       const avatars = await getAvatars(msgs.map(m => m.username));
-
       if (token !== loadToken || channel !== currentChannel) return;
 
       messagesEl.innerHTML = msgs.map(m => {
-        const safe = String(m.text).replace(/\\\\\\\\n/g, '<br>');
+        const safe = String(m.text).replace(/\n/g, '<br>');
         return `
       <div class="message">
         <div class="message-row">
@@ -221,22 +239,151 @@
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
+    async function loadSuggestions(token = ++loadToken){
+      currentThreadId = null;
+      currentThread = null;
+      const messagesEl = $('messages');
+      messagesEl.innerHTML = '';
+
+      const top = document.createElement('div');
+      top.className = 'thread-topbar';
+      top.innerHTML = `<button id="newThreadBtn" class="thread-create-btn">Create Thread</button>`;
+      messagesEl.appendChild(top);
+
+      const { data: threads } = await supabase
+        .from('threads')
+        .select('id,title,description,created_by,created_at')
+        .eq('channel', 'suggestions')
+        .order('created_at', { ascending: false });
+
+      if (token !== loadToken || currentChannel !== 'suggestions') return;
+
+      (threads || []).forEach(thread => {
+        const card = document.createElement('div');
+        card.className = 'thread-card';
+        card.innerHTML = `
+          <div class="thread-title">${thread.title}</div>
+          <div class="thread-desc">${thread.description || ''}</div>
+          <div class="thread-meta">Created by ${thread.created_by || 'Unknown'} • ${new Date(thread.created_at).toLocaleString()}</div>
+        `;
+        card.onclick = () => openSuggestionThread(thread);
+        messagesEl.appendChild(card);
+      });
+
+      if (!threads || !threads.length) {
+        const empty = document.createElement('div');
+        empty.className = 'message';
+        empty.textContent = 'No suggestion threads yet.';
+        messagesEl.appendChild(empty);
+      }
+
+      $('newThreadBtn').onclick = openCreateThreadModal;
+      $('messageInput').placeholder = 'Reply in suggestions only after opening a thread';
+    }
+
+    async function openSuggestionThread(thread){
+      currentThreadId = thread.id;
+      currentThread = thread;
+      $('messages').innerHTML = '';
+
+      const top = document.createElement('div');
+      top.className = 'thread-topbar';
+
+      const isCreator = thread.created_by === username;
+      top.innerHTML = `
+        <button id="backToSuggestionsBtn" class="thread-back-btn">Back</button>
+        ${isCreator ? `<button id="deleteThreadBtn" class="thread-delete-btn">Delete Thread</button>` : ''}
+        <button id="threadTitleBtn" class="thread-create-btn" disabled>${thread.title}</button>
+      `;
+      $('messages').appendChild(top);
+
+      const info = document.createElement('div');
+      info.className = 'message';
+      info.innerHTML = `<div><strong>${thread.title}</strong></div><div style="color:#b9bbbe;margin-top:4px">${thread.description || 'No description.'}</div>`;
+      $('messages').appendChild(info);
+
+      $('backToSuggestionsBtn').onclick = () => switchChannel('suggestions');
+
+      const deleteBtn = $('deleteThreadBtn');
+      if (deleteBtn) {
+        deleteBtn.onclick = async () => {
+          if (!confirm('Delete this thread and all its replies?')) return;
+          const { error } = await supabase.from('threads').delete().eq('id', thread.id);
+          if (error) return alert('Failed to delete thread.');
+          currentThreadId = null;
+          currentThread = null;
+          await loadSuggestions();
+        };
+      }
+
+      $('messageInput').placeholder = `Reply to: ${thread.title}`;
+
+      const { data: msgs } = await supabase
+        .from('messages')
+        .select('username,text,created_at')
+        .eq('channel', 'suggestions')
+        .eq('thread_id', thread.id)
+        .order('created_at', { ascending: true });
+
+      const avatars = await getAvatars((msgs || []).map(m => m.username));
+
+      (msgs || []).forEach(m => {
+        const div = document.createElement('div');
+        div.className = 'message';
+        div.innerHTML = `
+          <div class="message-row">
+            <img class="avatar" src="${avatars[m.username]}" alt="avatar">
+            <div class="message-content">
+              <span class="username">${m.username}</span> ${String(m.text).replace(/\n/g, '<br>')}
+            </div>
+          </div>`;
+        setAvatarFallback(div.querySelector('.avatar'), m.username);
+        $('messages').appendChild(div);
+      });
+
+      if (!msgs || !msgs.length) {
+        await addMessage('System', 'No replies yet.');
+      }
+
+      $('messages').scrollTop = $('messages').scrollHeight;
+    }
+
     async function sendMessage(){
       const text=$('messageInput').value.trim();
       if(!text) return;
       if(currentChannel==='stats' || currentChannel==='shop') return alert('You cannot send messages in this channel!');
       const profile = await loadProfile(username);
-      
-      // Allow admins to bypass mute
+
       if (!profile?.is_admin && (profile?.muted_until || profile?.muted === true)) {
-        return alert(`You are muted!\\n\\nReason: ${profile.mute_reason || 'No reason specified'}`);
+        return alert(`You are muted!\n\nReason: ${profile.mute_reason || 'No reason specified'}`);
+      }
+
+      if (currentChannel === 'suggestions' && currentThreadId) {
+        const message = {
+          channel: 'suggestions',
+          thread_id: currentThreadId,
+          username,
+          text,
+          created_at: new Date().toISOString()
+        };
+
+        const { error } = await supabase.from('messages').insert(message);
+        if (error) return alert('Message failed to send.');
+        $('messageInput').value = '';
+        await openSuggestionThread(currentThread);
+        return;
+      }
+
+      if (currentChannel === 'suggestions' && !currentThreadId) {
+        return alert('Open a suggestion thread first, then reply inside it.');
       }
 
       const message = {
         channel: currentChannel,
         username,
         text,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        thread_id: null
       };
 
       const { error } = await supabase.from('messages').insert(message);
@@ -245,7 +392,7 @@
       $('messageInput').value='';
 
       const avatar = await avatarFor(username);
-      const safe = String(text).replace(/\\\\\\\\n/g, '<br>');
+      const safe = String(text).replace(/\n/g, '<br>');
       const div = document.createElement('div');
       div.className = 'message';
       div.innerHTML = `
@@ -299,7 +446,7 @@
 
     function parseRGB(colorStr) {
       if (!colorStr || !colorStr.includes('rgb')) return {r:255, g:255, b:255};
-      const match = colorStr.match(/rgb\\\\\((\\\\d+),(\\\\d+),(\\\\d+)\\\\\)/);
+      const match = colorStr.match(/rgb\((\d+),(\d+),(\d+)\)/);
       return { r: parseInt(match?.[1] || '255'), g: parseInt(match?.[2] || '255'), b: parseInt(match?.[3] || '255') };
     }
 
@@ -398,7 +545,7 @@
           o.remove();
           await refreshAdminButton();
           await refreshAdminVisibility();
-          if (currentChannel === 'stats') await loadStats(); else if (currentChannel === 'shop') await loadShop(); else await loadMessages(currentChannel);
+          if (currentChannel === 'stats') await loadStats(); else if (currentChannel === 'shop') await loadShop(); else if (currentChannel === 'suggestions' && currentThreadId) await openSuggestionThread(currentThread); else if (currentChannel === 'suggestions') await loadSuggestions(); else await loadMessages(currentChannel);
           alert('Profile updated!');
         };
       });
@@ -466,14 +613,61 @@
       });
     }
 
+    async function openCreateThreadModal(){
+      const o = openOverlay(`
+        <div style="padding:18px;color:#fff">
+          <h3 style="margin-top:0">Create Suggestion Thread</h3>
+          <div class="modal-field">
+            <label>Title</label>
+            <input id="threadTitle" type="text" placeholder="Thread title">
+          </div>
+          <div class="modal-field">
+            <label>Description</label>
+            <textarea id="threadDesc" placeholder="Thread description"></textarea>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <button id="createThreadBtn">Create</button>
+            <button id="cancelThreadBtn" class="cancel-btn">Cancel</button>
+          </div>
+        </div>
+      `);
+
+      o.querySelector('#cancelThreadBtn').onclick = () => o.remove();
+
+      o.querySelector('#createThreadBtn').onclick = async () => {
+        const title = o.querySelector('#threadTitle').value.trim().replace(/\s+/g, ' ');
+        const description = o.querySelector('#threadDesc').value.trim();
+
+        if (!title) return alert('Title is required.');
+
+        const { error } = await supabase.from('threads').insert({
+          channel: 'suggestions',
+          title,
+          description,
+          created_by: username,
+          created_at: new Date().toISOString()
+        });
+
+        if (error) {
+          if (error.code === '23505') return alert('You already made a suggestion thread with that exact title.');
+          return alert('Failed to create thread.');
+        }
+
+        o.remove();
+        await loadSuggestions();
+      };
+    }
+
     function switchChannel(channel){
       currentChannel = channel;
+      currentThreadId = null;
+      currentThread = null;
       renderChannelHeader(channel);
       $('messages').innerHTML = '';
       const token = ++loadToken;
       if(channel === 'stats') loadStats(token);
       else if(channel === 'shop') loadShop(token);
-      else if(channel === 'adaminchat') loadMessages(channel, token);
+      else if(channel === 'suggestions') loadSuggestions(token);
       else loadMessages(channel, token);
     }
 
