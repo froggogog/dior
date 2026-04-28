@@ -32,14 +32,31 @@
     .overlay-box{width:min(980px,96vw);height:min(680px,92vh);background:#1e1f22;border-radius:12px;position:relative;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.35)}
     .overlay-box iframe{position:absolute;inset:0;width:100%;height:100%;border:none}
     .close-btn{position:absolute;top:10px;right:10px;z-index:10001;width:40px;height:40px;border-radius:50%;border:none;background:#7289da;color:#fff;font-size:20px}
-    .game-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:15px;margin:20px 0}
+    .admin-list{padding:18px;color:#fff;overflow:auto;height:100%;box-sizing:border-box}
+    .admin-user{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px;margin-bottom:10px;background:#2f3136;border:1px solid #202225;border-radius:8px}
+    .admin-user-info{display:flex;flex-direction:column;gap:4px}
+    .admin-user-name{font-weight:bold;color:#fff}
+    .admin-user-stats{font-size:13px;color:#b9bbbe}
+    .admin-user-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .admin-mute-btn{background:#ff6b6b}
+    .admin-unmute-btn{background:#43b581}
+    .thread-card{padding:12px;background:#2f3136;border:1px solid #202225;border-radius:8px;cursor:pointer;margin-bottom:10px}
+    .thread-card:hover{background:#35393f}
+    .thread-title{font-weight:bold;color:#fff}
+    .thread-desc{font-size:13px;color:#b9bbbe;margin-top:4px}
+    .thread-meta{font-size:12px;color:#8e9297;margin-top:6px}
+    .thread-topbar{display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+    .thread-create-btn{background:#43b581}
+    .thread-back-btn{background:#5865f2}
+    .thread-delete-btn{background:#ff6b6b}
+    .modal-field{margin:10px 0}
+    .modal-field label{display:block;font-size:12px;color:#b9bbbe;margin-bottom:6px}
+    .modal-field input,.modal-field textarea{width:100%;box-sizing:border-box}
+    .modal-field textarea{padding:10px;border-radius:4px;border:none;background:#303339;color:#fff;outline:none;resize:vertical;height:120px}
+    .game-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:15px;margin-top:10px}
     .game-card{padding:15px;background:#2f3136;border:1px solid #202225;border-radius:8px;text-align:center}
     .game-card h4{margin:0 0 10px;font-size:16px;color:#fff}
     .game-card button{width:100%;margin:5px 0}
-    .games-header{padding:20px;background:#2f3136;border-bottom:1px solid #202225;text-align:center;font-size:18px;font-weight:bold;color:#fff;margin-bottom:15px}
-    .game-chat-btn{background:#5865f2;padding:8px 16px !important;font-size:14px !important;border-radius:6px !important;margin:10px auto !important;display:block;width:120px}
-    .game-chat-btn:hover{background:#4752c4 !important}
-    .back-btn{background:#7289da;padding:8px 16px !important;font-size:14px !important;border-radius:6px !important;margin:15px auto !important;display:block;width:140px}
   </style>
 </head>
 <body>
@@ -63,6 +80,7 @@
       <input id="messageInput" placeholder="Message #general" />
       <button id="sendBtn">Send</button>
     </div>
+    <div id="typingIndicator" class="typing-indicator"></div>
   </div>
 
   <script type="module">
@@ -74,21 +92,41 @@
     );
 
     const $ = id => document.getElementById(id);
-    let currentChannel = 'general', currentThreadId = null, loadToken = 0, username = '';
+    let currentChannel = 'general';
+    let currentThreadId = null;
+    let currentThread = null;
+    let username = localStorage.getItem('username') || '';
+    let loadToken = 0;
     const avatarCache = new Map();
 
-    const defaultProfile = {xp:0,level:1,coins:0,profile_picture:null,muted:false,owned_snake:false,owned_slope:false,owned_bartblast:false,owned_sls:true,is_admin:false};
+    const defaultProfile = {
+      xp: 0,
+      level: 1,
+      coins: 0,
+      profile_picture: null,
+      muted_until: null,
+      mute_reason: null,
+      muted: false,
+      owned_snake: false,
+      owned_slope: false,
+      owned_bartblast: false,
+      owned_sls: true,
+      is_admin: false,
+      pfp_brush_color: 'rgb(255,255,255)',
+      pfp_brush_width: 10,
+      pfp_bg_color: '#40444b'
+    };
 
-    username = localStorage.getItem('username') || '';
     if (!username) {
       while (!username) username = prompt('Enter username:');
       localStorage.setItem('username', username);
       await supabase.from('profiles').upsert({ username, ...defaultProfile });
     }
 
-    const fallback = n => `https://ui-avatars.com/api/?name=${encodeURIComponent(n)}&background=7289da&color=fff&rounded=true&size=64`;
+    const getFallbackAvatar = n => `https://ui-avatars.com/api/?name=${encodeURIComponent(n)}&background=7289da&color=fff&rounded=true&size=64`;
+    const setAvatarFallback = (img, n) => img.onerror = () => { img.onerror = null; img.src = getFallbackAvatar(n); };
 
-    async function getProfile(name) {
+    async function loadProfile(name) {
       const { data } = await supabase.from('profiles').select('*').eq('username', name).single();
       return data || {};
     }
@@ -97,174 +135,610 @@
       await supabase.from('profiles').upsert(profile);
     }
 
-    async function getAvatar(name) {
-      if (avatarCache.has(name)) return avatarCache.get(name);
-      const p = await getProfile(name);
-      const url = p.profile_picture || fallback(name);
-      avatarCache.set(name, url);
-      return url;
+    async function ensureProfile(){
+      await supabase.from('profiles').upsert({ username, ...defaultProfile });
     }
 
-    async function addMessage(user, text, avatarUrl = null) {
-      const avatar = avatarUrl || await getAvatar(user);
-      const safeText = String(text).replace(/\\n/g, '<br>');
-      const div = document.createElement('div');
-      div.className = 'message';
-      div.innerHTML = `
-        <div class="message-row">
-          <img class="avatar" src="${avatar}" alt="avatar" onerror="this.onerror=null; this.src='${fallback(user)}'">
-          <div class="message-content">
-            <span class="username">${user}</span> ${safeText}
-          </div>
-        </div>`;
+    async function refreshAdminVisibility() {
+      const profile = await loadProfile(username);
+      const btn = $('adminChatChannel');
+      if (!btn) return;
+      btn.style.display = profile?.is_admin === true ? 'block' : 'none';
+    }
+
+    async function refreshAdminButton() {
+      const profile = await loadProfile(username);
+      const btn = $('adminPanelBtn');
+      if (!btn) return;
+      btn.style.display = profile?.is_admin === true ? 'block' : 'none';
+    }
+
+    async function getAvatars(usernames) {
+      const unique = [...new Set(usernames.filter(Boolean))];
+      const missing = unique.filter(name => !avatarCache.has(name));
+
+      if (missing.length) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('username, profile_picture')
+          .in('username', missing);
+
+        const rows = data || [];
+        for (const name of missing) {
+          const profile = rows.find(p => p.username === name);
+          avatarCache.set(name, profile?.profile_picture || getFallbackAvatar(name));
+        }
+      }
+
+      const out = {};
+      for (const name of unique) out[name] = avatarCache.get(name) || getFallbackAvatar(name);
+      return out;
+    }
+
+    async function avatarFor(name){
+      if (avatarCache.has(name)) return avatarCache.get(name);
+      const profile = await loadProfile(name);
+      const avatar = profile?.profile_picture || getFallbackAvatar(name);
+      avatarCache.set(name, avatar);
+      return avatar;
+    }
+
+    async function addMessage(user, text, avatarUrl=null){
+      const div=document.createElement('div');
+      div.className='message';
+      const safe = String(text).replace(/\\n/g,'<br>');
+      div.innerHTML=`<div class="message-row"><img class="avatar" src="${avatarUrl||await avatarFor(user)}" alt="avatar"><div class="message-content"><span class="username">${user}</span> ${safe}</div></div>`;
+      const img = div.querySelector('.avatar');
+      setAvatarFallback(img, user);
       $('messages').appendChild(div);
       $('messages').scrollTop = $('messages').scrollHeight;
     }
 
-    function setHeader(channel, thread = null) {
-      const names = {stats: '# stats', shop: '# shop', suggestions: '# suggestions', gaming: '# gaming', adaminchat: '# ad da min chat'};
-      $('channelName').textContent = thread ? `${names[channel] || `# ${channel}`} → ${thread}` : names[channel] || `# ${channel}`;
-      $('messageInput').placeholder = ['stats','shop'].includes(channel) ? '' : `Message ${thread ? `${thread} in #${channel}` : `#${channel}`}`;
+    function renderChannelHeader(channel){
+      $('channelName').textContent = channel === 'stats' ? '# stats' : channel === 'shop' ? '# shop' : channel === 'suggestions' ? '# suggestions' : channel === 'gaming' ? '# gaming' : channel === 'adaminchat' ? '# ad da min chat' : `# ${channel}`;
+      $('messageInput').placeholder = (channel === 'stats' || channel === 'shop') ? '' : `Message #${channel}`;
       $('messageInput').disabled = false;
       $('sendBtn').style.display = 'inline-block';
     }
 
-    async function loadGaming(token = ++loadToken) {
-      if (token !== loadToken || currentChannel !== 'gaming') return;
-      
-      const p = await getProfile(username);
-      $('messages').innerHTML = `
-        <div class="games-header">🎮 Play Games</div>
-        <button class="game-chat-btn" id="gameChatBtn">Game Chat</button>
-        <div class="game-grid">
-          ${gameCard('🐍 Snake Game', 'playSnakeBtn', 25, 'owned_snake')}
-          ${gameCard('📈 Slope Game', 'playSlopeBtn', 50, 'owned_slope')}
-          ${gameCard('🎯 Bart Blast', 'playBartBtn', 75, 'owned_bartblast')}
-          ${gameCard('⚽ Super Liquid Soccer', 'playSlsBtn', 0, 'owned_sls', true)}
-        </div>`;
+    async function loadMessages(channel, token = ++loadToken){
+      const messagesEl = $('messages');
+      messagesEl.innerHTML = '';
 
-      setupGameBtns(p);
-      $('gameChatBtn').onclick = () => enterGamesChat();
-    }
+      const { data: msgs } = await supabase
+        .from('messages')
+        .select('channel,username,text,created_at')
+        .eq('channel', channel)
+        .is('thread_id', null)
+        .order('created_at', { ascending: true })
+        .limit(50);
 
-    function gameCard(title, btnId, price, ownedKey, free = false) {
-      return `<div class="game-card"><h4>${title}</h4><button class="shop-btn" id="${btnId}">${free?'Play (Free)':'Buy ('+price+' coins)'}</button></div>`;
-    }
+      if (token !== loadToken || channel !== currentChannel) return;
 
-    function setupGameBtns(p) {
-      const games = [
-        {id: 'playSnakeBtn', owned: 'owned_snake', price: 25, open: () => openFrame('https://frogdafish.github.io/Snek')},
-        {id: 'playSlopeBtn', owned: 'owned_slope', price: 50, open: () => openFrame('slope.html')},
-        {id: 'playBartBtn', owned: 'owned_bartblast', price: 75, open: () => openFrame('bartblast.html')},
-        {id: 'playSlsBtn', owned: 'owned_sls', price: 0, open: () => openFrame('https://blueskywrld.github.io/game3/')}
-      ];
+      if (!msgs || !msgs.length) {
+        messagesEl.innerHTML = '';
+        await addMessage('System', 'No messages yet.');
+        return;
+      }
 
-      games.forEach(g => {
-        const btn = $(g.id);
-        if (btn && (p[g.owned] || g.price === 0)) {
-          btn.textContent = 'Play (Fullscreen)';
-          btn.onclick = g.open;
-        } else if (btn) {
-          btn.onclick = () => buyGame(g.id, g.price, g.owned);
-        }
+      const avatars = await getAvatars(msgs.map(m => m.username));
+      if (token !== loadToken || channel !== currentChannel) return;
+
+      messagesEl.innerHTML = msgs.map(m => {
+        const safe = String(m.text).replace(/\\n/g, '<br>');
+        return `
+      <div class="message">
+        <div class="message-row">
+          <img class="avatar" src="${avatars[m.username]}" alt="avatar">
+          <div class="message-content">
+            <span class="username">${m.username}</span> ${safe}
+          </div>
+        </div>
+      </div>`;
+      }).join('');
+
+      messagesEl.querySelectorAll('.avatar').forEach((img, i) => {
+        setAvatarFallback(img, msgs[i].username);
       });
+
+      messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
-    async function buyGame(btnId, price, ownedKey) {
-      const p = await getProfile(username);
-      if (p.coins < price) return alert(`Need ${price} coins!`);
-      p.coins -= price;
-      p[ownedKey] = true;
-      await saveProfile(p);
-      alert('Purchased!');
-      loadGaming(++loadToken);
+    async function loadSuggestions(token = ++loadToken){
+      currentThreadId = null;
+      currentThread = null;
+      const messagesEl = $('messages');
+      messagesEl.innerHTML = '';
+
+      const top = document.createElement('div');
+      top.className = 'thread-topbar';
+      top.innerHTML = `<button id="newThreadBtn" class="thread-create-btn">Create Thread</button>`;
+      messagesEl.appendChild(top);
+
+      const { data: threads } = await supabase
+        .from('threads')
+        .select('id,title,description,created_by,created_at')
+        .eq('channel', 'suggestions')
+        .order('created_at', { ascending: false });
+
+      if (token !== loadToken || currentChannel !== 'suggestions') return;
+
+      (threads || []).forEach(thread => {
+        const card = document.createElement('div');
+        card.className = 'thread-card';
+        card.innerHTML = `
+          <div class="thread-title">${thread.title}</div>
+          <div class="thread-desc">${thread.description || ''}</div>
+          <div class="thread-meta">Created by ${thread.created_by || 'Unknown'} • ${new Date(thread.created_at).toLocaleString()}</div>
+        `;
+        card.onclick = () => openSuggestionThread(thread);
+        messagesEl.appendChild(card);
+      });
+
+      if (!threads || !threads.length) {
+        const empty = document.createElement('div');
+        empty.className = 'message';
+        empty.textContent = 'No suggestion threads yet.';
+        messagesEl.appendChild(empty);
+      }
+
+      $('newThreadBtn').onclick = openCreateThreadModal;
+      $('messageInput').placeholder = 'Reply in suggestions only after opening a thread';
     }
 
-    async function enterGamesChat() {
-      currentThreadId = 'games-chat';
-      setHeader('gaming', 'Game Chat');
-      $('messages').innerHTML = `<button class="back-btn" onclick="switchChannel('gaming')">← Back to Games</button>`;
-      await loadMessages('gaming', 'games-chat');
+    async function loadGaming(token = ++loadToken){
+      currentThreadId = null;
+      currentThread = null;
+      const messagesEl = $('messages');
+      messagesEl.innerHTML = '';
+
+      const top = document.createElement('div');
+      top.className = 'thread-topbar';
+      top.innerHTML = `<button id="gamesChatBtn" class="thread-create-btn">Games Chat</button>`;
+      messagesEl.appendChild(top);
+
+      const gamesGrid = document.createElement('div');
+      gamesGrid.className = 'game-grid';
+      gamesGrid.innerHTML = `
+        <div class="game-card">
+          <h4>Snake Game</h4>
+          <button class="shop-btn" id="playSnakeBtn">Play (Fullscreen)</button>
+        </div>
+        <div class="game-card">
+          <h4>Slope Game</h4>
+          <button class="shop-btn" id="playSlopeBtn">Play (Fullscreen)</button>
+        </div>
+        <div class="game-card">
+          <h4>Bart Blast</h4>
+          <button class="shop-btn" id="playBartBtn">Play (Fullscreen)</button>
+        </div>
+        <div class="game-card">
+          <h4>Super Liquid Soccer</h4>
+          <button class="shop-btn" id="playSlsBtn">Play (Free)</button>
+        </div>
+      `;
+      messagesEl.appendChild(gamesGrid);
+
+      const p = await loadProfile(username);
+
+      if(p.owned_snake) {
+        $('playSnakeBtn').onclick = openSnakeFullscreen;
+      } else {
+        $('playSnakeBtn').textContent = 'Buy (25 coins)';
+        $('playSnakeBtn').onclick = async () => {
+          const p2 = await loadProfile(username);
+          if((p2.coins||0) < 25) return alert('You need 25 coins to buy Snake!');
+          p2.coins -= 25;
+          p2.owned_snake = true;
+          await saveProfile(p2);
+          alert('You bought Snake!');
+          await loadGaming();
+        };
+      }
+
+      if(p.owned_slope) {
+        $('playSlopeBtn').onclick = openSlopeFullscreen;
+      } else {
+        $('playSlopeBtn').textContent = 'Buy (50 coins)';
+        $('playSlopeBtn').onclick = async () => {
+          const p2 = await loadProfile(username);
+          if((p2.coins||0) < 50) return alert('You need 50 coins to buy Slope!');
+          p2.coins -= 50;
+          p2.owned_slope = true;
+          await saveProfile(p2);
+          alert('You bought Slope!');
+          await loadGaming();
+        };
+      }
+
+      if(p.owned_bartblast) {
+        $('playBartBtn').onclick = openBartFullscreen;
+      } else {
+        $('playBartBtn').textContent = 'Buy (75 coins)';
+        $('playBartBtn').onclick = async () => {
+          const p2 = await loadProfile(username);
+          if((p2.coins||0) < 75) return alert('You need 75 coins to buy Bart Blast!');
+          p2.coins -= 75;
+          p2.owned_bartblast = true;
+          await saveProfile(p2);
+          alert('You bought Bart Blast!');
+          await loadGaming();
+        };
+      }
+
+      $('playSlsBtn').onclick = openSuperLiquidSoccerFullscreen;
+      $('gamesChatBtn').onclick = () => loadGamingThreads();
+
+      if (token !== loadToken || currentChannel !== 'gaming') return;
     }
 
-    async function loadMessages(channel, threadId = null, token = ++loadToken) {
-      if (token !== loadToken || channel !== currentChannel || threadId !== currentThreadId) return;
-      
-      // ONLY back button in gaming chat thread - NO headers anywhere
-      const backButtonHtml = (channel === 'gaming' && threadId === 'games-chat') ? 
-        '<button class="back-btn" onclick="switchChannel(\'gaming\')">← Back to Games</button>' : '';
-      
-      $('messages').innerHTML = backButtonHtml;
-      
-      const query = supabase.from('messages').select('*').eq('channel', channel).order('created_at', { ascending: true }).limit(50);
-      if (threadId) query.eq('thread_id', threadId);
-      else query.is('thread_id', null);
-      
-      const { data: msgs } = await query;
-      
-      if (!msgs?.length) return addMessage('System', threadId === 'games-chat' ? 'Welcome to game chat!' : 'No messages yet.');
-      for (const m of msgs) await addMessage(m.username, m.text);
+    async function loadGamingThreads(){
+      currentThreadId = null;
+      currentThread = null;
+      const messagesEl = $('messages');
+      messagesEl.innerHTML = '';
+
+      const top = document.createElement('div');
+      top.className = 'thread-topbar';
+      top.innerHTML = `
+        <button id="backToGamingBtn" class="thread-back-btn">← Back to Games</button>
+        <button id="createGamingThreadBtn" class="thread-create-btn">Create Thread</button>
+      `;
+      messagesEl.appendChild(top);
+
+      const { data: threads } = await supabase
+        .from('threads')
+        .select('id,title,description,created_by,created_at')
+        .eq('channel', 'gaming')
+        .order('created_at', { ascending: false });
+
+      (threads || []).forEach(thread => {
+        const card = document.createElement('div');
+        card.className = 'thread-card';
+        card.innerHTML = `
+          <div class="thread-title">${thread.title}</div>
+          <div class="thread-desc">${thread.description || ''}</div>
+          <div class="thread-meta">Created by ${thread.created_by || 'Unknown'} • ${new Date(thread.created_at).toLocaleString()}</div>
+        `;
+        card.onclick = () => openGamingThread(thread);
+        messagesEl.appendChild(card);
+      });
+
+      if (!threads || !threads.length) {
+        const empty = document.createElement('div');
+        empty.className = 'message';
+        empty.textContent = 'No gaming threads yet. Click Create Thread to start one!';
+        messagesEl.appendChild(empty);
+      }
+
+      $('backToGamingBtn').onclick = () => loadGaming();
+      $('createGamingThreadBtn').onclick = openCreateThreadModal;
+      $('messageInput').placeholder = 'Discuss games in threads only';
     }
 
-    async function loadStats(token = ++loadToken) {
-      if (token !== loadToken || currentChannel !== 'stats') return;
-      const p = await getProfile(username);
+    async function openGamingThread(thread){
+      currentThreadId = thread.id;
+      currentThread = thread;
       $('messages').innerHTML = '';
-      await addMessage('System', `${p.username}<br><strong>Level:</strong> ${p.level}<br><strong>XP:</strong> ${p.xp}<br><strong>Coins:</strong> ${p.coins}`);
+
+      const top = document.createElement('div');
+      top.className = 'thread-topbar';
+      const isCreator = thread.created_by === username;
+      top.innerHTML = `
+        <button id="backToGamingThreadsBtn" class="thread-back-btn">← Back</button>
+        ${isCreator ? `<button id="deleteGamingThreadBtn" class="thread-delete-btn">Delete</button>` : ''}
+        <button id="gamingThreadTitleBtn" class="thread-create-btn" disabled>${thread.title}</button>
+      `;
+      $('messages').appendChild(top);
+
+      const info = document.createElement('div');
+      info.className = 'message';
+      info.innerHTML = `<div><strong>${thread.title}</strong></div><div style="color:#b9bbbe;margin-top:4px">${thread.description || 'Game discussion thread.'}</div>`;
+      $('messages').appendChild(info);
+
+      $('backToGamingThreadsBtn').onclick = () => loadGamingThreads();
+
+      const deleteBtn = $('deleteGamingThreadBtn');
+      if (deleteBtn) {
+        deleteBtn.onclick = async () => {
+          if (!confirm('Delete this gaming thread and all replies?')) return;
+          const { error } = await supabase.from('threads').delete().eq('id', thread.id);
+          if (error) return alert('Failed to delete thread.');
+          await loadGamingThreads();
+        };
+      }
+
+      $('messageInput').placeholder = `Chat about ${thread.title}`;
+
+      const { data: msgs } = await supabase
+        .from('messages')
+        .select('username,text,created_at')
+        .eq('channel', 'gaming')
+        .eq('thread_id', thread.id)
+        .order('created_at', { ascending: true });
+
+      const avatars = await getAvatars((msgs || []).map(m => m.username));
+
+      (msgs || []).forEach(m => {
+        const div = document.createElement('div');
+        div.className = 'message';
+        div.innerHTML = `
+          <div class="message-row">
+            <img class="avatar" src="${avatars[m.username]}" alt="avatar">
+            <div class="message-content">
+              <span class="username">${m.username}</span> ${String(m.text).replace(/\\n/g, '<br>')}
+            </div>
+          </div>`;
+        setAvatarFallback(div.querySelector('.avatar'), m.username);
+        $('messages').appendChild(div);
+      });
+
+      if (!msgs || !msgs.length) {
+        await addMessage('System', 'No messages in this gaming thread yet.');
+      }
+
+      $('messages').scrollTop = $('messages').scrollHeight;
     }
 
-    async function loadShop(token = ++loadToken) {
-      if (token !== loadToken || currentChannel !== 'shop') return;
-      $('messages').innerHTML = '<div class="message" style="text-align:center;color:#b9bbbe">🛒 Games in #gaming!</div>';
+    async function openSuggestionThread(thread){
+      currentThreadId = thread.id;
+      currentThread = thread;
+      $('messages').innerHTML = '';
+
+      const top = document.createElement('div');
+      top.className = 'thread-topbar';
+
+      const isCreator = thread.created_by === username;
+      top.innerHTML = `
+        <button id="backToSuggestionsBtn" class="thread-back-btn">Back</button>
+        ${isCreator ? `<button id="deleteThreadBtn" class="thread-delete-btn">Delete Thread</button>` : ''}
+        <button id="threadTitleBtn" class="thread-create-btn" disabled>${thread.title}</button>
+      `;
+      $('messages').appendChild(top);
+
+      const info = document.createElement('div');
+      info.className = 'message';
+      info.innerHTML = `<div><strong>${thread.title}</strong></div><div style="color:#b9bbbe;margin-top:4px">${thread.description || 'No description.'}</div>`;
+      $('messages').appendChild(info);
+
+      $('backToSuggestionsBtn').onclick = () => switchChannel('suggestions');
+
+      const deleteBtn = $('deleteThreadBtn');
+      if (deleteBtn) {
+        deleteBtn.onclick = async () => {
+          if (!confirm('Delete this thread and all its replies?')) return;
+          const { error } = await supabase.from('threads').delete().eq('id', thread.id);
+          if (error) return alert('Failed to delete thread.');
+          currentThreadId = null;
+          currentThread = null;
+          await loadSuggestions();
+        };
+      }
+
+      $('messageInput').placeholder = `Reply to: ${thread.title}`;
+
+      const { data: msgs } = await supabase
+        .from('messages')
+        .select('username,text,created_at')
+        .eq('channel', 'suggestions')
+        .eq('thread_id', thread.id)
+        .order('created_at', { ascending: true });
+
+      const avatars = await getAvatars((msgs || []).map(m => m.username));
+
+      (msgs || []).forEach(m => {
+        const div = document.createElement('div');
+        div.className = 'message';
+        div.innerHTML = `
+          <div class="message-row">
+            <img class="avatar" src="${avatars[m.username]}" alt="avatar">
+            <div class="message-content">
+              <span class="username">${m.username}</span> ${String(m.text).replace(/\\n/g, '<br>')}
+            </div>
+          </div>`;
+        setAvatarFallback(div.querySelector('.avatar'), m.username);
+        $('messages').appendChild(div);
+      });
+
+      if (!msgs || !msgs.length) {
+        await addMessage('System', 'No replies yet.');
+      }
+
+      $('messages').scrollTop = $('messages').scrollHeight;
     }
 
-    function openFrame(src) {
-      const overlay = document.createElement('div');
-      overlay.className = 'overlay';
-      overlay.innerHTML = `<div class="overlay-box"><button class="close-btn" onclick="this.parentElement.parentElement.remove()">×</button><iframe src="${src}"></iframe></div>`;
-      document.body.appendChild(overlay);
-    }
-
-    async function sendMessage() {
+    async function sendMessage(){
       const text = $('messageInput').value.trim();
-      if (!text || ['stats','shop'].includes(currentChannel)) return;
-      
-      const p = await getProfile(username);
-      if (p.muted) return alert('You are muted!');
-      
-      const msg = {channel: currentChannel, username, text, created_at: new Date().toISOString(), thread_id: currentThreadId || null};
-      const { error } = await supabase.from('messages').insert(msg);
-      if (error) return alert('Send failed.');
-      
-      $('messageInput').value = '';
-      await addMessage(username, text);
+      if(!text) return;
+      if(currentChannel==='stats' || currentChannel==='shop') return alert('You cannot send messages in this channel!');
+      const profile = await loadProfile(username);
+
+      if (!profile?.is_admin && (profile?.muted_until || profile?.muted === true)) {
+        return alert(`You are muted!\n\nReason: ${profile.mute_reason || 'No reason specified'}`);
+      }
+
+      if (currentChannel === 'gaming' && currentThreadId) {
+        const message = {
+          channel: currentChannel,
+          thread_id: currentThreadId,
+          username,
+          text,
+          created_at: new Date().toISOString()
+        };
+
+        const { error } = await supabase.from('messages').insert(message);
+        if (error) return alert('Message failed to send.');
+        $('messageInput').value = '';
+        await openGamingThread(currentThread);
+        return;
+      }
+
+      if (currentChannel === 'suggestions' && currentThreadId) {
+        const message = {
+          channel: currentChannel,
+          thread_id: currentThreadId,
+          username,
+          text,
+          created_at: new Date().toISOString()
+        };
+
+        const { error } = await supabase.from('messages').insert(message);
+        if (error) return alert('Message failed to send.');
+        $('messageInput').value = '';
+        await openSuggestionThread(currentThread);
+        return;
+      }
+
+      if (currentChannel === 'suggestions' && !currentThreadId) {
+        return alert('Open a suggestion thread first, then reply inside it.');
+      }
+
+      if (currentChannel === 'gaming' && !currentThreadId) {
+        return alert('Click "Games Chat" first to discuss games in threads, or play a game!');
+      }
+
+      const message = {
+        channel: currentChannel,
+        username,
+        text,
+        created_at: new Date().toISOString(),
+        thread_id: null
+      };
+
+      const { error } = await supabase.from('messages').insert(message);
+      if (error) return alert('Message failed to send.');
+
+      $('messageInput').value='';
+
+      const avatar = await avatarFor(username);
+      const safe = String(text).replace(/\\n/g, '<br>');
+      const div = document.createElement('div');
+      div.className = 'message';
+      div.innerHTML = `
+        <div class="message-row">
+          <img class="avatar" src="${avatar}" alt="avatar">
+          <div class="message-content">
+            <span class="username">${username}</span> ${safe}
+          </div>
+        </div>`;
+      setAvatarFallback(div.querySelector('.avatar'), username);
+      $('messages').appendChild(div);
+      $('messages').scrollTop = $('messages').scrollHeight;
     }
 
-    async function switchChannel(channel) {
+    async function loadStats(token = loadToken){
+      const p = await loadProfile(username);
+      if (token !== loadToken || currentChannel !== 'stats') return;
+      $('messages').innerHTML='';
+      await addMessage('System', `${p.username}<br><strong>Level:</strong> ${p.level}<br><strong>XP:</strong> ${p.xp}<br><strong>XP to next level:</strong> ${Math.max((p.level||1)*100-(p.xp||0),0)}<br><strong>Coins:</strong> ${p.coins}<br><strong>Admin:</strong> ${p.is_admin ? 'Yes' : 'No'}`, await avatarFor(p.username));
+    }
+
+    async function loadShop(token = loadToken){
+      const p = await loadProfile(username);
+      if (token !== loadToken || currentChannel !== 'shop') return;
+      $('messages').innerHTML = '<div class="message"><div style="text-align:center;color:#b9bbbe">Games are now in #gaming! Shop coming soon...</div></div>';
+    }
+
+    function openOverlay(innerHTML){
+      const old=document.querySelector('.overlay'); if(old) old.remove();
+      const o=document.createElement('div'); o.className='overlay';
+      o.innerHTML=`<div class="overlay-box"><button class="close-btn">×</button>${innerHTML}</div>`;
+      o.querySelector('.close-btn').onclick=()=>o.remove();
+      document.body.appendChild(o);
+      return o;
+    }
+
+    function parseRGB(colorStr) {
+      if (!colorStr || !colorStr.includes('rgb')) return {r:255, g:255, b:255};
+      const match = colorStr.match(/rgb\((\d+),(\d+),(\d+)\)/);
+      return { r: parseInt(match?.[1] || '255'), g: parseInt(match?.[2] || '255'), b: parseInt(match?.[3] || '255') };
+    }
+
+    function createPfpEditor(profile){ }
+    function openProfileEditor(){ }
+
+    function openSnakeFullscreen(){ openOverlay(`<iframe src="https://frogdafish.github.io/Snek"></iframe>`); }
+    function openSlopeFullscreen(){ openOverlay(`<iframe src="slope.html"></iframe>`); }
+    function openBartFullscreen(){ openOverlay(`<iframe src="bartblast.html"></iframe>`); }
+    function openSuperLiquidSoccerFullscreen(){ openOverlay(`<iframe src="https://blueskywrld.github.io/game3/"></iframe>`); }
+
+    async function openAdminPanel(){ }
+
+    async function openCreateThreadModal(){
+      const channelName = currentChannel === 'gaming' ? 'Gaming' : 'Suggestion';
+      const o = openOverlay(`
+        <div style="padding:18px;color:#fff">
+          <h3 style="margin-top:0">Create ${channelName} Thread</h3>
+          <div class="modal-field">
+            <label>Title</label>
+            <input id="threadTitle" type="text" placeholder="Thread title">
+          </div>
+          <div class="modal-field">
+            <label>Description</label>
+            <textarea id="threadDesc" placeholder="Thread description"></textarea>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <button id="createThreadBtn">Create</button>
+            <button id="cancelThreadBtn" class="cancel-btn">Cancel</button>
+          </div>
+        </div>
+      `);
+
+      o.querySelector('#cancelThreadBtn').onclick = () => o.remove();
+
+      o.querySelector('#createThreadBtn').onclick = async () => {
+        const title = o.querySelector('#threadTitle').value.trim().replace(/\s+/g, ' ');
+        const description = o.querySelector('#threadDesc').value.trim();
+
+        if (!title) return alert('Title is required.');
+
+        const { error } = await supabase.from('threads').insert({
+          channel: currentChannel,
+          title,
+          description,
+          created_by: username,
+          created_at: new Date().toISOString()
+        });
+
+        if (error) {
+          if (error.code === '23505') return alert(`You already made a ${channelName.toLowerCase()} thread with that exact title.`);
+          return alert('Failed to create thread.');
+        }
+
+        o.remove();
+        if (currentChannel === 'suggestions') {
+          await loadSuggestions();
+        } else if (currentChannel === 'gaming') {
+          await loadGamingThreads();
+        }
+      };
+    }
+
+    function switchChannel(channel){
       currentChannel = channel;
       currentThreadId = null;
-      setHeader(channel);
+      currentThread = null;
+      renderChannelHeader(channel);
       $('messages').innerHTML = '';
       const token = ++loadToken;
-      
-      if (channel === 'stats') await loadStats(token);
-      else if (channel === 'shop') await loadShop(token);
-      else if (channel === 'gaming') await loadGaming(token);
-      else await loadMessages(channel, null, token);
+      if(channel === 'stats') loadStats(token);
+      else if(channel === 'shop') loadShop(token);
+      else if(channel === 'suggestions') loadSuggestions(token);
+      else if(channel === 'gaming') loadGaming(token);
+      else loadMessages(channel, token);
     }
 
-    $('sendBtn').onclick = sendMessage;
-    $('messageInput').onkeydown = e => e.key === 'Enter' && sendMessage();
-    document.querySelectorAll('.channel').forEach(el => el.onclick = () => switchChannel(el.dataset.channel));
+    $('sendBtn').addEventListener('click', sendMessage);
+    $('messageInput').addEventListener('keydown', e=>{ if(e.key==='Enter') sendMessage(); });
+    $('editProfileBtn').addEventListener('click', openProfileEditor);
+    $('adminPanelBtn').addEventListener('click', openAdminPanel);
+    document.querySelectorAll('.channel').forEach(el=>el.addEventListener('click', ()=>switchChannel(el.dataset.channel)));
 
-    async function refreshAdmin() {
-      const p = await getProfile(username);
-      $('adminChatChannel').style.display = p.is_admin ? 'block' : 'none';
-      $('adminPanelBtn').style.display = p.is_admin ? 'block' : 'none';
-    }
-
-    await refreshAdmin();
-    switchChannel('general');
+    renderChannelHeader('general');
+    await ensureProfile();
+    await refreshAdminButton();
+    await refreshAdminVisibility();
+    await loadMessages('general');
   </script>
 </body>
 </html>
