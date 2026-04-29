@@ -187,7 +187,7 @@
     async function addMessage(user, text, avatarUrl=null){
       const div=document.createElement('div');
       div.className='message';
-      const safe = String(text).replace(/\\n/g,'<br>');
+      const safe = String(text).replace(/\\\\n/g,'<br>');
       div.innerHTML=`<div class="message-row"><img class="avatar" src="${avatarUrl||await avatarFor(user)}" alt="avatar"><div class="message-content"><span class="username">${user}</span> ${safe}</div></div>`;
       const img = div.querySelector('.avatar');
       setAvatarFallback(img, user);
@@ -226,7 +226,7 @@
       if (token !== loadToken || channel !== currentChannel) return;
 
       messagesEl.innerHTML = msgs.map(m => {
-        const safe = String(m.text).replace(/\\n/g, '<br>');
+        const safe = String(m.text).replace(/\\\\n/g, '<br>');
         return `
       <div class="message">
         <div class="message-row">
@@ -251,10 +251,21 @@
       const messagesEl = $('messages');
       messagesEl.innerHTML = '';
 
+      const profile = await loadProfile(username);
+      const canCreate = profile?.is_admin === true || (!profile?.muted && !profile?.muted_until);
+
       const top = document.createElement('div');
       top.className = 'thread-topbar';
-      top.innerHTML = `<button id="newThreadBtn" class="thread-create-btn">Create Thread</button>`;
+      top.innerHTML = `
+        <button id="newThreadBtn" class="thread-create-btn" ${canCreate ? '' : 'disabled'}>Create Thread</button>
+      `;
       messagesEl.appendChild(top);
+
+      if (!canCreate) {
+        $('newThreadBtn').onmouseover = () => alert('You are muted and cannot create threads.');
+      } else {
+        $('newThreadBtn').onclick = () => openCreateThreadModal();
+      }
 
       const { data: threads } = await supabase
         .from('threads')
@@ -267,13 +278,34 @@
       (threads || []).forEach(thread => {
         const card = document.createElement('div');
         card.className = 'thread-card';
+        const isAdmin = profile?.is_admin === true;
+        const selfBtns = isAdmin
+          ? `<button id="deleteThreadBtn_${thread.id}" class="thread-delete-btn" style="margin-top:6px;">Delete Thread</button>`
+          : (thread.created_by === username
+            ? `<button id="deleteThreadBtn_${thread.id}" class="thread-delete-btn" style="margin-top:6px;">Delete Thread</button>`
+            : '');
+
         card.innerHTML = `
           <div class="thread-title">${thread.title}</div>
           <div class="thread-desc">${thread.description || ''}</div>
           <div class="thread-meta">Created by ${thread.created_by || 'Unknown'} • ${new Date(thread.created_at).toLocaleString()}</div>
+          ${selfBtns}
         `;
         card.onclick = () => openSuggestionThread(thread);
         messagesEl.appendChild(card);
+
+        const btn = card.querySelector(`#deleteThreadBtn_${thread.id}`);
+        if (btn) {
+          btn.onclick = async (e) => {
+            e.stopPropagation();
+            if (!confirm('Delete this thread and all its replies?')) return;
+            const { error } = await supabase.from('threads').delete().eq('id', thread.id);
+            if (error) return alert('Failed to delete thread.');
+            currentThreadId = null;
+            currentThread = null;
+            await loadSuggestions();
+          };
+        }
       });
 
       if (!threads || !threads.length) {
@@ -283,7 +315,6 @@
         messagesEl.appendChild(empty);
       }
 
-      $('newThreadBtn').onclick = openCreateThreadModal;
       $('messageInput').placeholder = 'Reply in suggestions only after opening a thread';
     }
 
@@ -295,7 +326,7 @@
 
       const top = document.createElement('div');
       top.className = 'thread-topbar';
-      top.innerHTML = `<button id="gamesChatBtn" class="thread-create-btn">Games Chat</button>`;
+      top.innerHTML = `<button id="gamesChatBtn" class="thread-create-btn">GamesChat</button>`;
       messagesEl.appendChild(top);
 
       const gamesGrid = document.createElement('div');
@@ -379,13 +410,24 @@
       const messagesEl = $('messages');
       messagesEl.innerHTML = '';
 
+      const profile = await loadProfile(username);
+      const canCreate = profile?.is_admin === true || (!profile?.muted && !profile?.muted_until);
+
       const top = document.createElement('div');
       top.className = 'thread-topbar';
       top.innerHTML = `
         <button id="backToGamingBtn" class="thread-back-btn">← Back to Games</button>
-        <button id="createGamingThreadBtn" class="thread-create-btn">Create Thread</button>
+        <button id="createGamingThreadBtn" class="thread-create-btn" ${canCreate ? '' : 'disabled'}>Create Thread</button>
       `;
       messagesEl.appendChild(top);
+
+      if (!canCreate) {
+        $('createGamingThreadBtn').onmouseover = () => alert('You are muted and cannot create threads.');
+      } else {
+        $('createGamingThreadBtn').onclick = () => openCreateThreadModal();
+      }
+
+      $('backToGamingBtn').onclick = () => loadGaming();
 
       const { data: threads } = await supabase
         .from('threads')
@@ -396,13 +438,32 @@
       (threads || []).forEach(thread => {
         const card = document.createElement('div');
         card.className = 'thread-card';
+        const isAdmin = profile?.is_admin === true;
+        const selfBtns = isAdmin
+          ? `<button id="deleteGamingThreadBtn_${thread.id}" class="thread-delete-btn" style="margin-top:6px;">Delete Thread</button>`
+          : (thread.created_by === username
+            ? `<button id="deleteGamingThreadBtn_${thread.id}" class="thread-delete-btn" style="margin-top:6px;">Delete Thread</button>`
+            : '');
+
         card.innerHTML = `
           <div class="thread-title">${thread.title}</div>
           <div class="thread-desc">${thread.description || ''}</div>
           <div class="thread-meta">Created by ${thread.created_by || 'Unknown'} • ${new Date(thread.created_at).toLocaleString()}</div>
+          ${selfBtns}
         `;
         card.onclick = () => openGamingThread(thread);
         messagesEl.appendChild(card);
+
+        const btn = card.querySelector(`#deleteGamingThreadBtn_${thread.id}`);
+        if (btn) {
+          btn.onclick = async (e) => {
+            e.stopPropagation();
+            if (!confirm('Delete this gaming thread and all replies?')) return;
+            const { error } = await supabase.from('threads').delete().eq('id', thread.id);
+            if (error) return alert('Failed to delete thread.');
+            await loadGamingThreads();
+          };
+        }
       });
 
       if (!threads || !threads.length) {
@@ -412,8 +473,6 @@
         messagesEl.appendChild(empty);
       }
 
-      $('backToGamingBtn').onclick = () => loadGaming();
-      $('createGamingThreadBtn').onclick = openCreateThreadModal;
       $('messageInput').placeholder = 'Discuss games in threads only';
     }
 
@@ -422,12 +481,21 @@
       currentThread = thread;
       $('messages').innerHTML = '';
 
+      const profile = await loadProfile(username);
+      const isAdmin = profile?.is_admin === true;
+
       const top = document.createElement('div');
       top.className = 'thread-topbar';
-      const isCreator = thread.created_by === username;
+      const isCreator = thread.created_by === username || isAdmin;
+
+      let deleteBtnHtml = '';
+      if (isAdmin || isCreator) {
+        deleteBtnHtml = `<button id="deleteGamingThreadBtn" class="thread-delete-btn">Delete Thread</button>`;
+      }
+
       top.innerHTML = `
         <button id="backToGamingThreadsBtn" class="thread-back-btn">← Back</button>
-        ${isCreator ? `<button id="deleteGamingThreadBtn" class="thread-delete-btn">Delete</button>` : ''}
+        ${deleteBtnHtml}
         <button id="gamingThreadTitleBtn" class="thread-create-btn" disabled>${thread.title}</button>
       `;
       $('messages').appendChild(top);
@@ -467,7 +535,7 @@
           <div class="message-row">
             <img class="avatar" src="${avatars[m.username]}" alt="avatar">
             <div class="message-content">
-              <span class="username">${m.username}</span> ${String(m.text).replace(/\\n/g, '<br>')}
+              <span class="username">${m.username}</span> ${String(m.text).replace(/\\\\n/g, '<br>') || '.'}
             </div>
           </div>`;
         setAvatarFallback(div.querySelector('.avatar'), m.username);
@@ -486,13 +554,21 @@
       currentThread = thread;
       $('messages').innerHTML = '';
 
+      const profile = await loadProfile(username);
+      const isAdmin = profile?.is_admin === true;
+
       const top = document.createElement('div');
       top.className = 'thread-topbar';
+      const isCreator = thread.created_by === username || isAdmin;
 
-      const isCreator = thread.created_by === username;
+      let deleteBtnHtml = '';
+      if (isAdmin || isCreator) {
+        deleteBtnHtml = `<button id="deleteThreadBtn" class="thread-delete-btn">Delete Thread</button>`;
+      }
+
       top.innerHTML = `
         <button id="backToSuggestionsBtn" class="thread-back-btn">Back</button>
-        ${isCreator ? `<button id="deleteThreadBtn" class="thread-delete-btn">Delete Thread</button>` : ''}
+        ${deleteBtnHtml}
         <button id="threadTitleBtn" class="thread-create-btn" disabled>${thread.title}</button>
       `;
       $('messages').appendChild(top);
@@ -534,7 +610,7 @@
           <div class="message-row">
             <img class="avatar" src="${avatars[m.username]}" alt="avatar">
             <div class="message-content">
-              <span class="username">${m.username}</span> ${String(m.text).replace(/\\n/g, '<br>')}
+              <span class="username">${m.username}</span> ${String(m.text).replace(/\\\\n/g, '<br>') || '.'}
             </div>
           </div>`;
         setAvatarFallback(div.querySelector('.avatar'), m.username);
@@ -552,10 +628,12 @@
       const text = $('messageInput').value.trim();
       if(!text) return;
       if(currentChannel==='stats' || currentChannel==='shop') return alert('You cannot send messages in this channel!');
+
       const profile = await loadProfile(username);
 
+      // Muted check (you can also add time‑based mute here via muted_until)
       if (!profile?.is_admin && (profile?.muted_until || profile?.muted === true)) {
-        return alert(`You are muted!\n\nReason: ${profile.mute_reason || 'No reason specified'}`);
+        return alert(`You are muted!\\n\\nReason: ${profile.mute_reason || 'No reason specified'}`);
       }
 
       if (currentChannel === 'gaming' && currentThreadId) {
@@ -622,7 +700,7 @@
       $('messageInput').value='';
 
       const avatar = await avatarFor(username);
-      const safe = String(text).replace(/\\n/g, '<br>');
+      const safe = String(text).replace(/\\\\n/g, '<br>');
       const div = document.createElement('div');
       div.className = 'message';
       div.innerHTML = `
@@ -729,7 +807,7 @@
 
     function parseRGB(colorStr) {
       if (!colorStr || !colorStr.includes('rgb')) return {r:255, g:255, b:255};
-      const match = colorStr.match(/rgb\((\d+),(\d+),(\d+)\)/);
+      const match = colorStr.match(/rgb\\((\\d+),(\\d+),(\\d+)\\)/);
       return { r: parseInt(match?.[1] || '255'), g: parseInt(match?.[2] || '255'), b: parseInt(match?.[3] || '255') };
     }
 
@@ -822,6 +900,11 @@
     }
 
     async function openCreateThreadModal(){
+      const profile = await loadProfile(username);
+      if (!profile?.is_admin && (profile?.muted_until || profile?.muted === true)) {
+        return alert(`You are muted!\\n\\nReason: ${profile.mute_reason || 'No reason specified'}`);
+      }
+
       const channelName = currentChannel === 'gaming' ? 'Gaming' : 'Suggestion';
       const o = openOverlay(`
         <div style="padding:18px;color:#fff">
@@ -844,7 +927,7 @@
       o.querySelector('#cancelThreadBtn').onclick = () => o.remove();
 
       o.querySelector('#createThreadBtn').onclick = async () => {
-        const title = o.querySelector('#threadTitle').value.trim().replace(/\s+/g, ' ');
+        const title = o.querySelector('#threadTitle').value.trim().replace(/\\s+/g, ' ');
         const description = o.querySelector('#threadDesc').value.trim();
 
         if (!title) return alert('Title is required.');
