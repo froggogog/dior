@@ -199,7 +199,7 @@
       const div=document.createElement('div');
       div.className='message';
       const { showCrown } = await getAvatarAndCrown(user);
-      const crown = showCrown ? `<img src="crown.jpg" class="crown-overlay" />` : '';
+      const crown = showCrown ? `<img src="crown.png" class="crown-overlay" />` : '';
       const safe = String(text).replace(/\\\\n/g,'<br>');
       div.innerHTML=`<div class="message-row"><div class="avatar-container"><img class="avatar" src="${avatarUrl||await avatarFor(user)}" alt="avatar">${crown}</div><div class="message-content"><span class="username">${user}</span> ${safe}</div></div>`;
       const img = div.querySelector('.avatar');
@@ -237,7 +237,7 @@
 
       for (const m of msgs) {
         const { avatar, showCrown } = await getAvatarAndCrown(m.username);
-        const crown = showCrown ? `<img src="crown.jpg" class="crown-overlay" />` : '';
+        const crown = showCrown ? `<img src="crown.png" class="crown-overlay" />` : '';
         const safe = String(m.text).replace(/\\\\n/g, '<br>');
         const div = document.createElement('div');
         div.className = 'message';
@@ -544,7 +544,7 @@
 
       for (const m of (msgs || [])) {
         const { avatar, showCrown } = await getAvatarAndCrown(m.username);
-        const crown = showCrown ? `<img src="crown.jpg" class="crown-overlay" />` : '';
+        const crown = showCrown ? `<img src="crown.png" class="crown-overlay" />` : '';
         const div = document.createElement('div');
         div.className = 'message';
         div.innerHTML = `
@@ -622,7 +622,7 @@
 
       for (const m of (msgs || [])) {
         const { avatar, showCrown } = await getAvatarAndCrown(m.username);
-        const crown = showCrown ? `<img src="crown.jpg" class="crown-overlay" />` : '';
+        const crown = showCrown ? `<img src="crown.png" class="crown-overlay" />` : '';
         const div = document.createElement('div');
         div.className = 'message';
         div.innerHTML = `
@@ -671,7 +671,7 @@
         if (error) return alert('Message failed to send.');
         profile.xp = (profile.xp || 0) + 1;
         profile.coins = (profile.coins || 0) + 1;
-        await saveProfile(profile);
+        await saveProfile(profilyoure);
         $('messageInput').value = '';
         await openGamingThread(currentThread);
         return;
@@ -722,7 +722,7 @@
       $('messageInput').value='';
 
       const avatar = await avatarFor(username);
-      const crown = (profile.has_crown && profile.crown_equipped) ? `<img src="crown.jpg" class="crown-overlay" />` : '';
+      const crown = (profile.has_crown && profile.crown_equipped) ? `<img src="crown.png" class="crown-overlay" />` : '';
       const safe = String(text).replace(/\\\\n/g, '<br>');
       const div = document.createElement('div');
       div.className = 'message';
@@ -1008,6 +1008,17 @@
     await refreshAdminButton();
     await refreshAdminVisibility();
     await loadMessages('general');
+  
+    document.querySelectorAll('.channel').forEach(el => {
+      el.addEventListener('click', () => switchChannel(el.dataset.channel));
+    });
+
+    renderChannelHeader('general');
+    await ensureProfile();
+    await refreshAdminButton();
+    await refreshAdminVisibility();
+    await loadMessages('general');
   </script>
 </body>
 </html>
+
