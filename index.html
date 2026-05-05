@@ -224,44 +224,38 @@
         .select('channel,username,text,created_at')
         .eq('channel', channel)
         .is('thread_id', null)
-        .order('created_at', { ascending: true })
-        ;
+        .order('created_at', { ascending: true });
 
       if (token !== loadToken || channel !== currentChannel) return;
 
       if (!msgs || !msgs.length) {
-        messagesEl.innerHTML = '';
         await addMessage('System', 'No messages yet.');
         return;
       }
 
-      for (const m of msgs) {
-        const { avatar, showCrown } = await getAvatarAndCrown(m.username);
-        const crown = showCrown ? `<img src="crown.png" class="crown-overlay" />` : '';
-        const safe = String(m.text).replace(/\\\\n/g, '<br>');
-        const div = document.createElement('div');
-        div.className = 'message';
-        div.innerHTML = `
-      <div class="message">
-        <div class="message-row">
-          <div class="avatar-container">
-            <img class="avatar" src="${avatar}" alt="avatar">
-            ${crown}
-          </div>
-          <div class="message-content">
-            <span class="username">${m.username}</span> ${safe}
-          </div>
-        </div>
-      </div>`;
-        const img = div.querySelector('.avatar');
-        setAvatarFallback(img, m.username);
-        messagesEl.appendChild(div);
-      }
+      const usernames = [...new Set(msgs.map(m => m.username).filter(Boolean))];
+      const avatars = await getAvatars(usernames);
 
+      messagesEl.innerHTML = msgs.map(m => {
+        const avatar = avatars[m.username] || getFallbackAvatar(m.username);
+        const safe = String(m.text).replace(/\n/g, '<br>');
+        return `
+          <div class="message">
+            <div class="message-row">
+              <div class="avatar-container">
+                <img class="avatar" src="${avatar}" alt="avatar">
+              </div>
+              <div class="message-content">
+                <span class="username">${m.username}</span> ${safe}
+              </div>
+            </div>
+          </div>`;
+      }).join('');
+
+      messagesEl.querySelectorAll('.avatar').forEach((img, i) => setAvatarFallback(img, msgs[i].username));
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
-
-    async function loadSuggestions(token = ++loadToken){
+async function loadSuggestions(token = ++loadToken){
       currentThreadId = null;
       currentThread = null;
       const messagesEl = $('messages');
